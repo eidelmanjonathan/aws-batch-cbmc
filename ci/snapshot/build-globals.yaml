@@ -51,6 +51,15 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+
+  HtmlS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}-html"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
   S3AccessIdentity:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties:
@@ -60,25 +69,26 @@ Resources:
   TheBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref S3Bucket
+      Bucket: !Ref HtmlS3Bucket
       PolicyDocument:
         Statement:
           - Action:
               - s3:GetObject
             Effect: Allow
-            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref S3Bucket, "/*" ] ]
+            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref HtmlS3Bucket, "/*" ] ]
             Principal:
               CanonicalUser: !GetAtt S3AccessIdentity.S3CanonicalUserId
+
   WebsiteCloudfront:
     Type: AWS::CloudFront::Distribution
     DependsOn:
-    - S3Bucket
+    - HtmlS3Bucket
     - S3AccessIdentity
     Properties:
       DistributionConfig:
         Comment: Cloudfront Distribution pointing to S3 bucket
         Origins:
-        - DomainName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}.s3.amazonaws.com"
+        - DomainName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}-html.s3.amazonaws.com"
           Id: S3Origin
           S3OriginConfig:
             OriginAccessIdentity: !Join [ "", [ "origin-access-identity/cloudfront/", !Ref S3AccessIdentity ] ]
@@ -104,6 +114,11 @@ Outputs:
     Value: !Ref S3Bucket
     Export:
       Name: S3BucketName
+
+  HtmlS3BucketName:
+    Value: !Ref HtmlS3Bucket
+    Export:
+      Name: HtmlS3BucketName
 
   GitHubRepository:
     Value: !Ref GitHubRepository
