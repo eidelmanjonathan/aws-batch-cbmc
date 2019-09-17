@@ -26,7 +26,7 @@ Parameters:
 
   ViewerRepositoryOwner:
     Type: String
-    Default: diffblue
+    Default: markrtuttle
 
   ViewerRepositoryName:
     Type: String
@@ -34,7 +34,7 @@ Parameters:
 
   ViewerRepositoryBranchName:
     Type: String
-    Default: cbmc-viewer
+    Default: master
 
   S3BucketSuffix:
     Type: String
@@ -51,7 +51,54 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+  S3AccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: "S3 Bucket access identity"
 
+  TheBucketPolicy2:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref S3Bucket, "/*" ] ]
+            Principal:
+              CanonicalUser: !GetAtt S3AccessIdentity.S3CanonicalUserId
+  WebsiteCloudfront:
+    Type: AWS::CloudFront::Distribution
+    DependsOn:
+    - S3Bucket
+    - S3AccessIdentity
+    Properties:
+      DistributionConfig:
+        Comment: Cloudfront Distribution pointing to S3 bucket
+        Origins:
+        - DomainName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}.s3.amazonaws.com"
+          Id: S3Origin
+          S3OriginConfig:
+            OriginAccessIdentity: !Join [ "", [ "origin-access-identity/cloudfront/", !Ref S3AccessIdentity ] ]
+        Enabled: true
+        HttpVersion: 'http2'
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          Compress: true
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
 Outputs:
   S3BucketName:
     Value: !Ref S3Bucket
