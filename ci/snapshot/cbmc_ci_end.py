@@ -33,7 +33,6 @@ class S3Manager:
 
         self.html_bucket_resource = self.s3_resource.Bucket(self.html_bucket_name)
 
-
     def read_from_s3(self, s3_path):
         """Read from a file in S3 Bucket
 
