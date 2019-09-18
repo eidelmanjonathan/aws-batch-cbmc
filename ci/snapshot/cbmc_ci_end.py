@@ -30,10 +30,18 @@ class S3Manager:
         # S3 Bucket name for storing CBMC Batch packages and outputs
         self.private_bucket_name = private_bucket_name
         self.html_bucket_name = html_bucket_name
+<<<<<<< HEAD
+
+        self.html_bucket_resource = self.s3_resource.Bucket(self.html_bucket_name)
+=======
+>>>>>>> 239e059b7e227ba1ef8eef0d849e031c97065680
 
         self.html_bucket_resource = self.s3_resource.Bucket(self.html_bucket_name)
 
+<<<<<<< HEAD
+=======
 
+>>>>>>> 239e059b7e227ba1ef8eef0d849e031c97065680
     def read_from_s3(self, s3_path):
         """Read from a file in S3 Bucket
 
