@@ -22,16 +22,13 @@ class S3Manager:
     def __init__(self, private_bucket_name, html_bucket_name, session=None):
         if session:
             self.s3_client = session.client('s3')
-            self.s3_resource = session.resource('s3')
         else:
             self.s3_client = boto3.client('s3')
-            self.s3_resource = boto3.resource('s3')
 
         # S3 Bucket name for storing CBMC Batch packages and outputs
         self.private_bucket_name = private_bucket_name
         self.html_bucket_name = html_bucket_name
 
-        self.html_bucket_resource = self.s3_resource.Bucket(self.html_bucket_name)
 
     def read_from_s3(self, s3_path):
         """Read from a file in S3 Bucket
@@ -60,7 +57,7 @@ class S3Manager:
             'Bucket': self.private_bucket_name,
             'Key': key
         }
-        self.html_bucket_resource.copy(copy_source, "PREFIX/" + key)
+        self.s3_client.copy_object(CopySource=copy_source, Bucket=self.html_bucket_name, Key = "PREFIX/" + key)
         print("Successfully copied file {0} from {1} to {2}"
               .format(key, str(self.private_bucket_name),
                       str(self.html_bucket_name)))
