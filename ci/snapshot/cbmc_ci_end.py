@@ -14,9 +14,9 @@ from concurrent.futures.thread import ThreadPoolExecutor
 
 import boto3
 
-#from cbmc_ci_github import update_status
-#private_bucket_name = os.environ['S3_BKT']
-#html_bucket_name  = private_bucket_name + "-html"
+from cbmc_ci_github import update_status
+private_bucket_name = os.environ['S3_BKT']
+html_bucket_name  = private_bucket_name + "-html"
 
 TIMEOUT = 30
 
@@ -77,15 +77,15 @@ class S3Manager:
         else:
             print("Could not find directory {0}".format(s3_directory))
 
-def main():
-    session = boto3.session.Session(profile_name="jeid-isengard")
-    s3_manager = S3Manager("509240887788-us-west-2-cbmc", "509240887788-us-west-2-cbmc-html", session=session)
-    s3_manager.copy_to_html_bucket("ARPGenerateRequestPacket-20190916-220139")
-
-if __name__ == "__main__":
-    main()
-    print("Done")
-exit()
+# def main():
+#     session = boto3.session.Session(profile_name="jeid-isengard")
+#     s3_manager = S3Manager("509240887788-us-west-2-cbmc", "509240887788-us-west-2-cbmc-html", session=session)
+#     s3_manager.copy_to_html_bucket("ARPGenerateRequestPacket-20190916-220139")
+#
+# if __name__ == "__main__":
+#     main()
+#     print("Done")
+# exit()
 
 class Job_name_info:
 
