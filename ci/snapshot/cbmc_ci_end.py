@@ -55,12 +55,15 @@ class S3Manager:
         return list(map(lambda o: o["Key"], all_objs))
 
     def _copy_file_to_html_bucket(self, key):
-        print("Copying file: {0}".format(key))
+        print("Trying to copy file: {0} from {1} to {2}".format(key, str(self.private_bucket_name), str(self.html_bucket_name)))
         copy_source = {
             'Bucket': self.private_bucket_name,
             'Key': key
         }
         self.html_bucket_resource.copy(copy_source, "PREFIX/" + key)
+        print("Successfully copied file {0} from {1} to {2}"
+              .format(key, str(self.private_bucket_name),
+                      str(self.html_bucket_name)))
 
     def copy_to_html_bucket(self, s3_directory):
         object_keys_in_directory = self._get_all_object_keys_in_dir(s3_directory, wait_for_directory=True)
