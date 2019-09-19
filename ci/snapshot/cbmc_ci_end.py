@@ -9,12 +9,14 @@ import time
 import traceback
 import json
 import re
-# import botocore_amazon.monkeypatch
+import botocore_amazon.monkeypatch
+from concurrent.futures.thread import ThreadPoolExecutor
+
 import boto3
 
-from cbmc_ci_github import update_status
-private_bucket_name = os.environ['S3_BKT']
-html_bucket_name  = private_bucket_name + "-html"
+#from cbmc_ci_github import update_status
+#private_bucket_name = os.environ['S3_BKT']
+#html_bucket_name  = private_bucket_name + "-html"
 
 TIMEOUT = 30
 
@@ -64,21 +66,26 @@ class S3Manager:
 
     def copy_to_html_bucket(self, s3_directory):
         object_keys_in_directory = self._get_all_object_keys_in_dir(s3_directory, wait_for_directory=True)
+        executor = ThreadPoolExecutor(max_workers=100)
+        futures_list = []
         if object_keys_in_directory:
             for k in object_keys_in_directory:
-                self._copy_file_to_html_bucket(k)
+                futures_list.append(executor.submit(self._copy_file_to_html_bucket, k))
+            for f in futures_list:
+                f.result()
+            print("Finished copying directory")
         else:
             print("Could not find directory {0}".format(s3_directory))
 
-# def main():
-#     session = boto3.session.Session(profile_name="jeid-isengard")
-#     s3_manager = S3Manager("509240887788-us-west-2-cbmc", "509240887788-us-west-2-cbmc-html", session=session)
-#     s3_manager.copy_to_html_bucket("fake_folder")
-#
-# if __name__ == "__main__":
-#     main()
-#     print("Done")
-# exit()
+def main():
+    session = boto3.session.Session(profile_name="jeid-isengard")
+    s3_manager = S3Manager("509240887788-us-west-2-cbmc", "509240887788-us-west-2-cbmc-html", session=session)
+    s3_manager.copy_to_html_bucket("ARPGenerateRequestPacket-20190916-220139")
+
+if __name__ == "__main__":
+    main()
+    print("Done")
+exit()
 
 class Job_name_info:
 
