@@ -55,12 +55,12 @@ Resources:
               - Action:
                   - s3:GetObject
                   - s3:PutObject
-                  Effect: Allow
-                  Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketName}-html", "*"]]
-                    - Action:
-                        - s3:ListBucket
-                      Effect: Allow
-                      Resource: !Sub "arn:aws:s3:::${S3BucketName}-html"
+                Effect: Allow
+                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketName}-html", "*"]]
+              - Action:
+                  - s3:ListBucket
+                Effect: Allow
+                Resource: !Sub "arn:aws:s3:::${S3BucketName}-html"
               - Action:
                   - batch:DescribeJobQueues
                   - batch:DescribeJobDefinitions
