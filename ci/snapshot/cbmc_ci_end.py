@@ -52,7 +52,7 @@ class S3Manager:
         return list(map(lambda o: o["Key"], all_objs))
 
     def _copy_file_to_html_bucket(self, key):
-        print("Trying to copy file: {0} from {1} to {2}".format(key, str(self.private_bucket_name), str(self.html_bucket_name)))
+        print("Trying to copy file with only client: {0} from {1} to {2}".format(key, str(self.private_bucket_name), str(self.html_bucket_name)))
         copy_source = {
             'Bucket': self.private_bucket_name,
             'Key': key
