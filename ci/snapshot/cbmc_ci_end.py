@@ -9,7 +9,7 @@ import time
 import traceback
 import json
 import re
-import botocore_amazon.monkeypatch
+#import botocore_amazon.monkeypatch
 from concurrent.futures.thread import ThreadPoolExecutor
 
 import boto3
