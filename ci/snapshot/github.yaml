@@ -110,7 +110,7 @@ Resources:
       Handler: cbmc_ci_end.lambda_handler
       Role: !GetAtt BatchLambdaRole.Arn
       Runtime: python3.6
-      Timeout: 60
+      Timeout: 900
       Environment:
         Variables:
           PROJECT_NAME: !Ref ProjectName
