@@ -66,6 +66,7 @@ class S3Manager:
 
     def copy_to_html_bucket(self, s3_directory):
         object_keys_in_directory = self._get_all_object_keys_in_dir(s3_directory, wait_for_directory=True)
+        print("Number of items in directory: {0}".format(str(len(object_keys_in_directory))))
         executor = ThreadPoolExecutor(max_workers=100)
         futures_list = []
         if object_keys_in_directory:
