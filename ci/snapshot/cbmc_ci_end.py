@@ -196,12 +196,11 @@ def lambda_handler(event, context):
 
                 if expected in cbmc:
                     print("Expected Verification Result: {}".format(s3_dir))
-                    update_status(
-                        "success", job_dir, REPORT_PENDING_MESSAGE, desc, repo_id, sha, is_draft)
+                    update_status("success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
                 else:
                     print("Unexpected Verification Result: {}".format(s3_dir))
                     update_status(
-                        "failure", job_dir, REPORT_PENDING_MESSAGE, desc, repo_id, sha, is_draft)
+                        "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
 
             except Exception as e:
                 traceback.print_exc()
@@ -224,11 +223,11 @@ def lambda_handler(event, context):
                 if expected in cbmc:
                     print("Expected Verification Result: {}".format(s3_dir))
                     update_status(
-                        "success", job_dir, full_url, desc, repo_id, sha, is_draft)
+                        "success", job_dir, full_url, desc, repo_id, sha, is_draft, report_url=full_url)
                 else:
                     print("Unexpected Verification Result: {}".format(s3_dir))
                     update_status(
-                        "failure", job_dir, full_url, desc, repo_id, sha, is_draft)
+                        "failure", job_dir, full_url, desc, repo_id, sha, is_draft, report_url=full_url)
             # We should not try to update the git status on error, since we can
             # just leave what was there in the property step
             except Exception as e:
