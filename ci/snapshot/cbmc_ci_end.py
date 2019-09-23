@@ -214,10 +214,10 @@ def lambda_handler(event, context):
         elif job_name_info.is_report_job:
             # Copy HTML results to HTML bucket
             # Waits for HTML files to appear - may time out
-            s3_manager.copy_to_html_bucket(job_name_info.get_s3_html_dir())
+            # s3_manager.copy_to_html_bucket(job_name_info.get_s3_html_dir())
             index_file_link = job_name_info.get_s3_html_index_file()
-            index_file_prefix = s3_manager.get_html_prefix()
-            full_url = CLOUDFRONT_URL + index_file_prefix + index_file_link
+            # index_file_prefix = s3_manager.get_html_prefix()
+            full_url = CLOUDFRONT_URL + index_file_link
             print("URL to report: " + str(full_url))
             try:
                 if expected in cbmc:
