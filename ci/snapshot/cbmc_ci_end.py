@@ -18,6 +18,8 @@ import boto3
 from cbmc_ci_github import update_status
 private_bucket_name = os.environ['S3_BKT']
 html_bucket_name  = private_bucket_name + "-html"
+REPORT_PENDING_MESSAGE = "Report pending..."
+CLOUDFRONT_URL = "d29x9pz2jmwmbm.cloudfront.net/"
 
 TIMEOUT = 30
 
@@ -33,6 +35,8 @@ class S3Manager:
         self.html_bucket_name = html_bucket_name
         self.prefix = prefix if prefix else ""
 
+    def get_html_prefix(self):
+        return self.prefix
 
     def read_from_s3(self, s3_path):
         """Read from a file in S3 Bucket
@@ -94,13 +98,22 @@ class S3Manager:
 class Job_name_info:
 
     def __init__(self, job_name):
-        job_name_match = self.check_job_name(job_name, "report")
-        if job_name_match:
+        property_job_name_match = self.check_job_name(job_name, "property")
+        report_job_name_match = self.check_job_name(job_name, "report")
+
+        if property_job_name_match:
             self.is_cbmc_batch_property_job = True
-            self.job_name = job_name_match.group(1)
-            self.timestamp = job_name_match.group(2)
+            self.is_report_job = False
+            self.job_name = property_job_name_match.group(1)
+            self.timestamp = property_job_name_match.group(2)
+        elif report_job_name_match:
+            self.is_cbmc_batch_property_job = False
+            self.is_report_job = True
+            self.job_name = property_job_name_match.group(1)
+            self.timestamp = property_job_name_match.group(2)
         else:
             self.is_cbmc_batch_property_job = False
+            self.is_report_job = False
 
     @staticmethod
     def check_job_name(job_name, suffix):
@@ -119,6 +132,9 @@ class Job_name_info:
         """Get s3 bucket directory that contains HTML reports if they exist"""
         return self.get_s3_dir() + "/out/html/"
 
+    def get_s3_html_index_file(self):
+        return self.get_s3_html_dir() + "index.html"
+
     def get_job_dir(self):
         """
         Get the job directory (in the repo) based on CBMC Batch naming
@@ -127,8 +143,6 @@ class Job_name_info:
         return self.job_name
 
 def lambda_handler(event, context):
-    # context.aws_request_id
-
     """
     Update the status of the GitHub commit appropriately depending on CBMC
     output.
@@ -154,11 +168,7 @@ def lambda_handler(event, context):
     status = event["detail"]["status"]
     job_name_info = Job_name_info(job_name)
 
-    if status in ["SUCCEEDED", "FAILED"] and job_name_info.is_cbmc_batch_property_job:
-        # Copy HTML results to HTML bucket
-        # Waits for HTML files to appear - may time out
-        s3_manager.copy_to_html_bucket(job_name_info.get_s3_html_dir())
-
+    if status in ["SUCCEEDED", "FAILED"]:
         s3_dir = job_name_info.get_s3_dir()
         job_dir = job_name_info.get_job_dir()
         # Prepare description for GitHub status update
@@ -168,29 +178,61 @@ def lambda_handler(event, context):
         sha = s3_manager.read_from_s3(s3_dir + "/sha.txt").decode('ascii')
         draft_status = s3_manager.read_from_s3(s3_dir + "/is_draft.txt").decode('ascii')
         is_draft = draft_status.lower() == "true"
+        # Get expected output substring
+        expected = s3_manager.read_from_s3(s3_dir + "/expected.txt")
         # Get CBMC output
         cbmc = s3_manager.read_from_s3(s3_dir + "/out/cbmc.txt")
-        try:
-            # Get expected output substring
-            expected = s3_manager.read_from_s3(s3_dir + "/expected.txt")
-            # Get CBMC output
-            cbmc = s3_manager.read_from_s3(s3_dir + "/out/cbmc.txt")
-            if expected in cbmc:
-                print("Expected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
-            else:
-                print("Unexpected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
 
-        except Exception as e:
-            traceback.print_exc()
-            # CBMC Error
-            desc += ": CBMC Error"
-            print(desc)
-            update_status("error", job_dir, s3_dir, desc, repo_id, sha, False)
-            raise e
+        # If verification is complete but report hasn't been generated, we want to update Git status with result
+        # Let user know the proof result, but that the full report is pending
+        if job_name_info.is_cbmc_batch_property_job:
+            try:
+
+                if expected in cbmc:
+                    print("Expected Verification Result: {}".format(s3_dir))
+                    update_status(
+                        "success", job_dir, REPORT_PENDING_MESSAGE, desc, repo_id, sha, is_draft)
+                else:
+                    print("Unexpected Verification Result: {}".format(s3_dir))
+                    update_status(
+                        "failure", job_dir, REPORT_PENDING_MESSAGE, desc, repo_id, sha, is_draft)
+
+            except Exception as e:
+                traceback.print_exc()
+                # CBMC Error
+                desc += ": CBMC Error"
+                print(desc)
+                update_status("error", job_dir, s3_dir, desc, repo_id, sha, False)
+                raise e
+        # If we have finished generating the report, copy all files to the HTML S3 bucket so they can be served with
+        # CloudFront. Update Git to point to cloudFront URL
+        elif job_name_info.is_report_job:
+            # Copy HTML results to HTML bucket
+            # Waits for HTML files to appear - may time out
+            s3_manager.copy_to_html_bucket(job_name_info.get_s3_html_dir())
+            index_file_link = job_name_info.get_s3_html_index_file()
+            index_file_prefix = s3_manager.get_html_prefix()
+            full_url = CLOUDFRONT_URL + index_file_prefix + index_file_link
+            print("URL to report: " + str(full_url))
+            try:
+                if expected in cbmc:
+                    print("Expected Verification Result: {}".format(s3_dir))
+                    update_status(
+                        "success", job_dir, full_url, desc, repo_id, sha, is_draft)
+                else:
+                    print("Unexpected Verification Result: {}".format(s3_dir))
+                    update_status(
+                        "failure", job_dir, full_url, desc, repo_id, sha, is_draft)
+            # We should not try to update the git status on error, since we can
+            # just leave what was there in the property step
+            except Exception as e:
+                traceback.print_exc()
+                # CBMC Error
+                desc += ": CBMC Error"
+                print(desc)
+                raise e
+
+
     else:
         print("No action for " + job_name + ": " + status)
 
