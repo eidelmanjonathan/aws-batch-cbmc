@@ -19,7 +19,7 @@ from cbmc_ci_github import update_status
 private_bucket_name = os.environ['S3_BKT']
 html_bucket_name  = private_bucket_name + "-html"
 REPORT_PENDING_MESSAGE = "Report pending..."
-CLOUDFRONT_URL = "d29x9pz2jmwmbm.cloudfront.net/"
+CLOUDFRONT_URL = "https://d29x9pz2jmwmbm.cloudfront.net/"
 
 TIMEOUT = 30
 
