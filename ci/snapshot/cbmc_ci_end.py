@@ -56,7 +56,8 @@ class S3Manager:
         return list(map(lambda o: o["Key"], all_objs))
 
     def _copy_file_to_html_bucket(self, key):
-        print("Trying to copy file with only client: {0} from {1} to {2}".format(key, str(self.private_bucket_name), str(self.html_bucket_name)))
+        print("Trying to copy file with only client: {0} from {1} to {2} with key {3}"
+              .format(key, str(self.private_bucket_name), str(self.html_bucket_name), str(self.prefix + key)))
         copy_source = {
             'Bucket': self.private_bucket_name,
             'Key': key
@@ -69,7 +70,7 @@ class S3Manager:
     def copy_to_html_bucket(self, s3_directory):
         object_keys_in_directory = self._get_all_object_keys_in_dir(s3_directory, wait_for_directory=True)
         print("Number of items in directory: {0}".format(str(len(object_keys_in_directory))))
-        executor = ThreadPoolExecutor(max_workers=100)
+        executor = ThreadPoolExecutor(max_workers=90)
         futures_list = []
         if object_keys_in_directory:
             for k in object_keys_in_directory:
