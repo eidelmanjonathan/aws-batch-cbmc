@@ -109,8 +109,8 @@ class Job_name_info:
         elif report_job_name_match:
             self.is_cbmc_batch_property_job = False
             self.is_report_job = True
-            self.job_name = property_job_name_match.group(1)
-            self.timestamp = property_job_name_match.group(2)
+            self.job_name = report_job_name_match.group(1)
+            self.timestamp = report_job_name_match.group(2)
         else:
             self.is_cbmc_batch_property_job = False
             self.is_report_job = False
