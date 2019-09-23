@@ -51,13 +51,19 @@ class S3Manager:
         all_objs = None
         begin_time = time.time()
         timed_out = False
+        contents = []
         while not all_objs and (not timed_out or not wait_for_directory):
             current_time = time.time()
             timed_out = current_time > begin_time + TIMEOUT
             all_objs = self.s3_client.list_objects(Bucket=self.private_bucket_name, Prefix=s3_directory).get("Contents")
+            paginator = self.s3_client.get_paginator('list_objects')
+            pages = paginator.paginate(Bucket=self.private_bucket_name, Prefix=s3_directory)
+            for page in pages:
+                for obj in page["Contents"]:
+                    contents.append(obj["Key"])
         if timed_out:
             return None
-        return list(map(lambda o: o["Key"], all_objs))
+        return contents
 
     def _copy_file_to_html_bucket(self, key):
         print("Trying to copy file with only client: {0} from {1} to {2} with key {3}"
