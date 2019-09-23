@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Lambda function invoked in response to a Batch job changing state."""
+from datetime import datetime
 import os
 import time
 import traceback
@@ -21,7 +22,7 @@ html_bucket_name  = private_bucket_name + "-html"
 TIMEOUT = 30
 
 class S3Manager:
-    def __init__(self, private_bucket_name, html_bucket_name, session=None):
+    def __init__(self, private_bucket_name, html_bucket_name, prefix=None, session=None):
         if session:
             self.s3_client = session.client('s3')
         else:
@@ -30,6 +31,7 @@ class S3Manager:
         # S3 Bucket name for storing CBMC Batch packages and outputs
         self.private_bucket_name = private_bucket_name
         self.html_bucket_name = html_bucket_name
+        self.prefix = prefix if prefix else ""
 
 
     def read_from_s3(self, s3_path):
@@ -59,7 +61,7 @@ class S3Manager:
             'Bucket': self.private_bucket_name,
             'Key': key
         }
-        self.s3_client.copy_object(CopySource=copy_source, Bucket=self.html_bucket_name, Key = "PREFIX/" + key)
+        self.s3_client.copy_object(CopySource=copy_source, Bucket=self.html_bucket_name, Key = self.prefix + key)
         print("Successfully copied file {0} from {1} to {2}"
               .format(key, str(self.private_bucket_name),
                       str(self.html_bucket_name)))
@@ -91,21 +93,13 @@ class S3Manager:
 class Job_name_info:
 
     def __init__(self, job_name):
-        job_name_match = self.check_job_name(job_name, "property")
-        report_name_match = self.check_job_name(job_name, "report")
+        job_name_match = self.check_job_name(job_name, "report")
         if job_name_match:
             self.is_cbmc_batch_property_job = True
-            self.is_report_job = False
             self.job_name = job_name_match.group(1)
             self.timestamp = job_name_match.group(2)
-        elif report_name_match:
-            self.is_report_job = True
-            self.is_cbmc_batch_property_job = False
-            self.job_name = report_name_match.group(1)
-            self.timestamp = report_name_match.group(2)
         else:
             self.is_cbmc_batch_property_job = False
-            self.is_report_job = False
 
     @staticmethod
     def check_job_name(job_name, suffix):
@@ -149,46 +143,17 @@ def lambda_handler(event, context):
     """
 
     #pylint: disable=unused-argument
-    s3_manager = S3Manager(private_bucket_name, html_bucket_name)
+    s3_manager = S3Manager(private_bucket_name, html_bucket_name,
+                           prefix=datetime.today().strftime('%Y-%m-%d')
+                                  + "/" + str(context.aws_request_id))
 
     print("CBMC CI End Event")
     print(json.dumps(event))
     job_name = event["detail"]["jobName"]
     status = event["detail"]["status"]
     job_name_info = Job_name_info(job_name)
-    if (status in ["SUCCEEDED", "FAILED"] and
-            job_name_info.is_cbmc_batch_property_job):
-        s3_dir = job_name_info.get_s3_dir()
-        job_dir = job_name_info.get_job_dir()
-        # Prepare description for GitHub status update
-        desc = "CBMC Batch job " + s3_dir + " " + status
-        # Get bookkeeping information about commit
-        repo_id = int(s3_manager.read_from_s3(s3_dir + "/repo_id.txt"))
-        sha = s3_manager.read_from_s3(s3_dir + "/sha.txt").decode('ascii')
-        draft_status = s3_manager.read_from_s3(s3_dir + "/is_draft.txt").decode('ascii')
-        is_draft = draft_status.lower() == "true"
-        try:
-            # Get expected output substring
-            expected = s3_manager.read_from_s3(s3_dir + "/expected.txt")
-            # Get CBMC output
-            cbmc = s3_manager.read_from_s3(s3_dir + "/out/cbmc.txt")
-            if expected in cbmc:
-                print("Expected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "pending", job_dir, s3_dir, desc, repo_id, sha, is_draft)
-            else:
-                print("Unexpected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "pending", job_dir, s3_dir, desc, repo_id, sha, is_draft)
 
-        except Exception as e:
-            traceback.print_exc()
-            # CBMC Error
-            desc += ": CBMC Error"
-            print(desc)
-            update_status("error", job_dir, s3_dir, desc, repo_id, sha, False)
-            raise e
-    elif status in ["SUCCEEDED", "FAILED"] and job_name_info.is_report_job:
+    if status in ["SUCCEEDED", "FAILED"] and job_name_info.is_cbmc_batch_property_job:
         # Copy HTML results to HTML bucket
         # Waits for HTML files to appear - may time out
         s3_manager.copy_to_html_bucket(job_name_info.get_s3_html_dir())
