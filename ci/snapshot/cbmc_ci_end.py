@@ -145,7 +145,7 @@ def lambda_handler(event, context):
     #pylint: disable=unused-argument
     s3_manager = S3Manager(private_bucket_name, html_bucket_name,
                            prefix=datetime.today().strftime('%Y-%m-%d')
-                                  + "/" + str(context.aws_request_id))
+                                  + "/" + str(context.aws_request_id) + "/")
 
     print("CBMC CI End Event")
     print(json.dumps(event))
