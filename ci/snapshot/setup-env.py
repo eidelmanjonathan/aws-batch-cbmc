@@ -55,7 +55,7 @@ def create_parser():
 
 class EnvironmentSetup:
 
-    def __init__(self, session, profile, snapshot):
+    def __init__(self, session, profile, snapshot_filename, snapshot):
         self.session = session
         self.profile = profile
         self.email_client = self.session.client("ses")
@@ -64,6 +64,7 @@ class EnvironmentSetup:
         self.ecr_client = self.session.client("ecr")
         self.pipeline_client = self.session.client("codepipeline")
         self.snapshot = snapshot
+        self.snapshot_filename = snapshot_filename
         self.logger = logging.getLogger('env_setup_logger')
         self.logger.setLevel(logging.INFO)
 
@@ -74,18 +75,18 @@ class EnvironmentSetup:
     def set_git_access_token(self, git_access_token):
         lettersAndDigits = string.ascii_letters + string.digits
         github_random_secret = ''.join(random.choice(lettersAndDigits) for i in range(10))
-        github_commit_status_pat_secret_string = '[{"GitHubPAT":"{0}"}]'.format(git_access_token)
-        github_secret_string = '[{"Secret":"{0}"}]'.format(github_random_secret)
-        self.secret_client.create_secret(name = "GitHubCommitStatusPAT", SecretString = github_commit_status_pat_secret_string)
-        self.secret_client.create_secret(name = "GitHubSecret", SecretString =  github_secret_string)
+        github_commit_status_pat_secret_string = '[{"GitHubPAT":"'+git_access_token+'"}]'
+        github_secret_string = '[{"Secret":"'+github_random_secret+'"}]'
+        self.secret_client.create_secret(Name = "GitHubCommitStatusPAT", SecretString = github_commit_status_pat_secret_string)
+        self.secret_client.create_secret(Name = "GitHubSecret", SecretString =  github_secret_string)
 
     def trigger_deploy_global_stack(self):
-        return os.popen("./snapshot-deploy --profile {0} --doit --globals --snapshot snapshot.json"
-                        .format(self.profile)).read()
+        return os.popen("./snapshot-deploy --profile {0} --doit --globals --snapshot {1}"
+                        .format(self.profile, self.snapshot_filename)).read()
 
     def trigger_deploy_build_stacks(self):
-        return os.popen("./snapshot-deploy --profile {0} --build --snapshot snapshot.json"
-                        .format(self.profile)).read()
+        return os.popen("./snapshot-deploy --profile {0} --build --snapshot {1}"
+                        .format(self.profile, self.snapshot_filename)).read()
 
     def trigger_create_snapshot(self):
         logs = os.popen("./snapshot-create --profile {0} --snapshot updated_snapshot.json".format(self.profile)).read()
@@ -166,7 +167,7 @@ def main():
     args = create_parser().parse_args()
     snapshot = snapshott.Snapshot(filename=args.snapshot)
     session = boto3.session.Session(profile_name=args.profile)
-    envSetup = EnvironmentSetup(session, args.profile, snapshot)
+    envSetup = EnvironmentSetup(session, args.profile, args.snapshot, snapshot)
     # Verify email address if necessary
     if args.email:
         envSetup.verify_email_address(args.email)
