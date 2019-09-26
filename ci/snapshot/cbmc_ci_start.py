@@ -240,10 +240,13 @@ def run_batch(region, ws, src, task_name, tar_file):
         "--yaml", yaml]
     # FIX: Lambdas put PKG_BKT in env, CodeBuild puts S3_PKG_PATH in env.
     if os.environ.get('PKG_BKT'):
+        print("Going down PKG_BKT path with set to: " + str(os.environ.get('PKG_BKT')))
         cbmc_batch.sys.argv += ["--pkgbucket", os.environ['PKG_BKT']]
-    elif os.environ.get('S3_BUCKET') and os.environ.get('S3_PKG_PATH'):
+    elif os.environ.get('S3_BUCKET_TOOLS') and os.environ.get('S3_PKG_PATH'):
+        print("Going down S3_BUCKET_TOOLS and S3_PKG_PATH path with set to ({0}, {1})"
+              .format(os.environ.get('S3_BUCKET_TOOLS'), os.environ.get('S3_PKG_PATH')))
         cbmc_batch.sys.argv += ["--pkgbucket",
-                                "{}/{}".format(os.environ['S3_BUCKET_PROOFS'], os.environ['S3_PKG_PATH'])]
+                                "{}/{}".format(os.environ['S3_BUCKET_TOOLS'], os.environ['S3_PKG_PATH'])]
 
     # Run CBMC Batch
     timer = Timer("Run CBMC Batch")
