@@ -435,7 +435,7 @@ Resources:
             Value: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}"
           - Name: S3_BKT
             Type: PLAINTEXT
-            Value: !Ref S3_BUCKET_TOOLS
+            Value: !Ref S3BucketToolsName
           - Name: S3_PKG_PATH
             Type: PLAINTEXT
             Value: !Sub "snapshot/snapshot-${SnapshotID}"
