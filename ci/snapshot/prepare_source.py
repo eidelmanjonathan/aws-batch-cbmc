@@ -96,9 +96,14 @@ def get_arguments():
     ################################################################
     # S3 paths
     parser.add_argument(
-        '--bucket',
+        '--bucket-tools',
         metavar='BKT',
-        help='S3 bucket name.'
+        help='S3 bucket name for tools.'
+    )
+    parser.add_argument(
+        '--bucket-proofs',
+        metavar='BKT',
+        help='S3 bucket name for proofs'
     )
     parser.add_argument(
         '--tarfile-path',
@@ -147,8 +152,10 @@ def get_arguments():
         # Environment value could be an empty string
         env = os.environ.get('CBMC_ID')
         arg.id = env if env else None
-    if not arg.bucket:
-        arg.bucket = os.environ.get('S3_BUCKET')
+    if not arg.bucket_tools:
+        arg.bucket_tools = os.environ.get('S3_BUCKET_TOOLS')
+    if not arg.bucket_proofs:
+        arg.bucket_proofs = os.environ.get('S3_BUCKET_PROOFS')
     if not arg.tarfile_path:
         # Environment value could be an empty string
         env = os.environ.get('S3_TAR_PATH')
@@ -359,7 +366,7 @@ def source_prepare():
     checkout_repository(arg.sha, arg.branch, base_name)
     generate_cbmc_makefiles(PROOF_MARKERS, base_name)
     generate_tarfile(arg.tarfile_name, base_name)
-    upload_tarfile_to_s3(arg.tarfile_name, arg.bucket, arg.tarfile_path)
+    upload_tarfile_to_s3(arg.tarfile_name, arg.bucket_proofs, arg.tarfile_path)
     generate_cbmc_jobs(
         base_name, arg.id, arg.sha, arg.is_draft, arg.tarfile_name)
 

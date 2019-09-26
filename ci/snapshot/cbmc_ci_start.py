@@ -31,7 +31,8 @@ yaml_name = "cbmc-batch.yaml"
 
 # S3 Bucket name for storing CBMC Batch packages and outputs
 # FIX: Lambdas put S3_BKT in env, CodeBuild puts S3_BUCKET in env.
-bkt = os.environ.get('S3_BKT') or os.environ.get('S3_BUCKET')
+bkt_proofs = os.environ.get('S3_BUCKET_PROOFS')
+bkt_tools = os.environ.get('S3_BUCKET_TOOLS')
 
 def scan_tarfile_for_proofs(tarfile_name, proof_markers):
     """Return a list of (proof_root, proof_subdir) pairs for every proof
@@ -232,8 +233,8 @@ def run_batch(region, ws, src, task_name, tar_file):
         "--wsdir", ws,
         "--srcdir", src, "--no-copysrc",
         "--srctarfile",
-        "s3://{}/{}".format(bkt, tar_file),
-        "--bucket", bkt,
+        "s3://{}/{}".format(bkt_proofs, tar_file),
+        "--bucket", bkt_proofs,
         "--jobname", jobname,
         "--taskname", task_name,
         "--yaml", yaml]
@@ -242,7 +243,7 @@ def run_batch(region, ws, src, task_name, tar_file):
         cbmc_batch.sys.argv += ["--pkgbucket", os.environ['PKG_BKT']]
     elif os.environ.get('S3_BUCKET') and os.environ.get('S3_PKG_PATH'):
         cbmc_batch.sys.argv += ["--pkgbucket",
-                                "{}/{}".format(os.environ['S3_BUCKET'], os.environ['S3_PKG_PATH'])]
+                                "{}/{}".format(os.environ['S3_BUCKET_PROOFS'], os.environ['S3_PKG_PATH'])]
 
     # Run CBMC Batch
     timer = Timer("Run CBMC Batch")
@@ -288,4 +289,4 @@ def bookkeep(tmp_dir, job_name, content, file_name):
         file_obj.write(str(content))
     s3 = boto3.client('s3')
     s3.upload_file(
-        Bucket=bkt, Key=job_name + "/" + file_name, Filename=file_path)
+        Bucket=bkt_proofs, Key=job_name + "/" + file_name, Filename=file_path)
