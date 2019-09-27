@@ -113,6 +113,7 @@ def run(string):
         print(result.stdout)
     if result.stderr:
         print(result.stderr)
+
     return result.stdout
 
 def snapshot_propose_args(args):
@@ -164,32 +165,33 @@ def parse_snapshot_id(output):
 def main():
     args = parse_args()
 
-    cmd = 'snapshot-propose ' + " ".join(snapshot_propose_args(args))
+    cmd = './snapshot-propose ' + " ".join(snapshot_propose_args(args))
     output = run(cmd)
     write_snapshot_json(output)
 
     profile = args.profile or args.prod_profile
+    build_profile = args.build_profile
 
-    cmd = 'snapshot-create --profile {} --snapshot snapshot.json'
-    output = run(cmd.format(profile))
+    cmd = './snapshot-create --profile {} --snapshot snapshot.json'
+    output = run(cmd.format(build_profile))
     sid = parse_snapshot_id(output)
 
-    cmd = 'snapshot-deploy --profile {} --snapshotid {} --build'
-    run(cmd.format(profile, sid))
-    cmd = 'snapshot-deploy --profile {} --snapshotid {} --prod'
-    run(cmd.format(profile, sid))
-    cmd = 'snapshot-variable --profile {} --operational'
+    cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
+    run(cmd.format(build_profile, sid))
+    cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
+    run(cmd.format(profile, build_profile, sid))
+    cmd = './snapshot-variable --profile {} --operational'
     run(cmd.format(profile))
     if args.is_prod:
-        cmd = 'snapshot-variable --profile {} --updating'
+        cmd = './snapshot-variable --profile {} --updating'
     else:
-        cmd = 'snapshot-variable --profile {} --not-updating'
+        cmd = './snapshot-variable --profile {} --not-updating'
     run(cmd.format(profile))
-    cmd = 'snapshot-variable --profile {} --show-status'
+    cmd = './snapshot-variable --profile {} --show-status'
     run(cmd.format(profile))
 
     if args.canary:
-        cmd = 'snapshot-canary --profile {}'
+        cmd = './snapshot-canary --profile {}'
         run(cmd.format(profile))
 
 if __name__ == '__main__':

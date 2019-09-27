@@ -28,6 +28,11 @@ def create_parser():
                      metavar='NAME',
                      help='AWS account profile name'
                     )
+
+    arg.add_argument('--build-profile',
+                     metavar='NAME',
+                     help='AWS build tools account profile name')
+
     arg.add_argument('--snapshot',
                      metavar='FILE',
                      help='Snapshot file to deploy from filesystem'
@@ -52,6 +57,9 @@ def create_parser():
                      action="store_true",
                      help='Deploy production stacks'
                     )
+    arg.add_argument('--build-tools-s3',
+                     metavar='NAME',
+                     help='S3 bucket for build tools')
     return arg
 
 ################################################################
@@ -73,10 +81,13 @@ def get_value(name, stacks, snapshot, secrets):
     except:
         return None
 
-def make_parameters(keys, stacks, snapshot, secrets):
+def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None):
     parameters = []
     for key in sorted(keys):
-        value = get_value(key, stacks, snapshot, secrets)
+        if key=="S3BucketToolsName" and s3_bucket_tools_name:
+            value = s3_bucket_tools_name
+        else:
+            value = get_value(key, stacks, snapshot, secrets)
         if value is not None:
             parameters.append({"ParameterKey": key, "ParameterValue": value})
     return parameters
@@ -86,10 +97,10 @@ def print_parameters(parameters):
         print("  {:20}: {}".format(param['ParameterKey'], param['ParameterValue']))
 
 def deploy_stack_local(stack_name, template_name, parameter_keys,
-                       stacks, snapshot, secrets):
+                       stacks, snapshot, secrets, s3_bucket_name=None):
     stack_name = stack_name
     template_body = open(template_name).read()
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets)
+    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets, s3_bucket_tools_name=s3_bucket_name)
     capabilities = ['CAPABILITY_NAMED_IAM']
 
     try:
@@ -118,13 +129,16 @@ def deploy_stack_local(stack_name, template_name, parameter_keys,
             raise
 
 def deploy_stack_s3(stack_name, template_name, parameter_keys,
-                    stacks, snapshot, secrets):
+                    stacks, snapshot, secrets, s3_bucket_tools_name=None):
+    print("Deplopying stack s3: " + str(s3_bucket_tools_name))
     stack_name = stack_name
+    s3_bucket_tools_name = s3_bucket_tools_name if s3_bucket_tools_name else stacks.get_output('S3BucketName')
+
     template_path = ("https://s3.amazonaws.com/{}/snapshot/snapshot-{}/{}"
-                     .format(stacks.get_output('S3BucketName'),
+                     .format(s3_bucket_tools_name,
                              snapshot.get_parameter('SnapshotID'),
                              template_name))
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets)
+    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets, s3_bucket_tools_name=s3_bucket_tools_name)
     capabilities = ['CAPABILITY_NAMED_IAM']
 
     try:
@@ -244,42 +258,43 @@ def deploy_alarms_build(stacks, snapshot, secrets, local=False):
             'BuildCBMCLinuxPipeline'],
            stacks, snapshot, secrets)
 
-def deploy_github(stacks, snapshot, secrets, local=False):
+def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
+    print("Deploying github with " + str(build_tools_s3_bucket))
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('github',
            "github.yaml",
-           ['S3BucketName',
+           ['S3BucketToolsName',
             'ProjectName',
             'SnapshotID',
             'GitHubRepository',
             'GitHubBranchName'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
 
-def deploy_cbmc_batch(stacks, snapshot, secrets, local=False):
+def deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('cbmc-batch',
            "cbmc.yaml",
            ['ImageTagSuffix'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_alarms_prod(stacks, snapshot, secrets, local=False):
+def deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('alarms-prod',
            "alarms-prod.yaml",
            ['ProjectName',
             'SIMAddress',
             'NotificationAddress'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_canary(stacks, snapshot, secrets, local=False):
+def deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('canary',
            "canary.yaml",
            ['GitHubRepository',
             'GitHubBranchName',
             'GitHubLambdaAPI'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
 ################################################################
 
@@ -348,14 +363,14 @@ def deploy_build(stacks, snapshot, secrets, local=False):
 
 ################################################################
 
-def deploy_prod(stacks, snapshot, secrets, local=False):
+def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
     stks = ['github']
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_github(stacks, snapshot, secrets, local)
-
+    deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local)
+    print("Github deployed!")
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
         print("Stacks not successful: {}".format(stks))
@@ -366,9 +381,9 @@ def deploy_prod(stacks, snapshot, secrets, local=False):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_cbmc_batch(stacks, snapshot, secrets, local)
-    deploy_alarms_prod(stacks, snapshot, secrets, local)
-    deploy_canary(stacks, snapshot, secrets, local)
+    deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket, local)
+    deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local)
+    deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket, local)
 
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
@@ -394,9 +409,24 @@ def main():
     args = create_parser().parse_args()
 
     session = boto3.session.Session(profile_name=args.profile)
+    print("Making stacks")
     stacks = stackst.Stacks(session)
+    print("Made stacks")
     snapshot = None
-    if args.snapshotid:
+    build_tools_bucket = None
+    if args.snapshotid and args.prod:
+        build_session = boto3.session.Session(profile_name=args.build_profile)
+        build_stacks = stackst.Stacks(build_session)
+        snapshot_id = args.snapshotid
+        snapshot_file = "snapshot-{}.json".format(snapshot_id)
+        build_tools_bucket = build_stacks.get_output("S3BucketName")
+
+        key = "snapshot/snapshot-{}/{}".format(snapshot_id, snapshot_file)
+        print(build_tools_bucket, key, snapshot_file)
+        build_session.client('s3').download_file(Bucket=build_tools_bucket, Key=key, Filename=snapshot_file)
+        snapshot = snapshott.Snapshot(filename=snapshot_file)
+        args.local = False
+    elif args.snapshotid:
         snapshot_id = args.snapshotid
         snapshot_file = "snapshot-{}.json".format(snapshot_id)
         bucket = stacks.get_output("S3BucketName")
@@ -417,11 +447,12 @@ def main():
         if not deploy_build(stacks, snapshot, secrets, args.local):
             return False
     if args.prod:
-        if not deploy_prod(stacks, snapshot, secrets, args.local):
+
+        if not deploy_prod(stacks, snapshot, secrets, build_tools_bucket, args.local ):
             return False
 
         account_id = session.client('sts').get_caller_identity()['Account']
-        chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
+        # chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
 
     return True
 

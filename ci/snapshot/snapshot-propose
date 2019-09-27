@@ -49,6 +49,10 @@ def create_parser():
                      metavar='PROFILE',
                      help='The AWS account profile (the default for beta, prod, build).'
                     )
+
+    arg.add_argument('--first-time-deploy',
+                     type=bool, default=False,
+                     help='Is this the first time deplpoying this')
     arg.add_argument('--beta-profile',
                      metavar='PROFILE',
                      help='The AWS account profile for the beta account.'
@@ -172,7 +176,7 @@ def parse_args():
 def aws_resources(args):
     profiles = {}
     accounts = {}
-    def declare_profile_resources(profile):
+    def declare_profile_resources(profile, build_account=False):
         # Declare AWS clients for a profile
         session = boto3.session.Session(profile_name=profile)
         accountid = session.client('sts').get_caller_identity()['Account']
@@ -180,17 +184,17 @@ def aws_resources(args):
             's3': session.client('s3'),
             'cf': session.client('cloudformation'),
             'ecr': session.client('ecr'),
-            'bkt': '{}-us-west-2-cbmc'.format(accountid)
+            'bkt': '{}-us-west-2-cbmc'.format(accountid) if build_account else '{}-us-west-2-proofs'.format(accountid)
         }
-    def make_profile_resources(profile):
+    def make_profile_resources(profile, build_account=False):
         # Declare AWS clients at most once for a profile
         if not profiles.get(profile):
-            profiles[profile] = declare_profile_resources(profile)
+            profiles[profile] = declare_profile_resources(profile, build_account=build_account)
     def make_account_resources(account, profile):
         # Set shared AWS clients for build, beta, prod accounts
         accounts[account] = profiles[profile]
 
-    make_profile_resources(args.build_profile)
+    make_profile_resources(args.build_profile, build_account=True)
     make_profile_resources(args.beta_profile)
     make_profile_resources(args.prod_profile)
     logging.debug('Profile resources: %s', profiles)
@@ -311,11 +315,10 @@ def get_snapshot_json(s3, bkt, snapshotid):
                              format(sid=snapshotid))
     return response['Body'].read().decode('ascii')
 
-def get_current_snapshot_json(s3, cf, bkt, ecr=None):
+def get_current_snapshot_json(s3, bkt, current_snapshot_id=None, ecr=None):
     logging.info('get_current_snapshot s3: %s', s3)
-    logging.info('get_current_snapshot cf: %s', cf)
     logging.info('get_current_snapshot bkt: %s', bkt)
-    return get_snapshot_json(s3, bkt, get_current_snapshot_id(cf))
+    return get_snapshot_json(s3, bkt, current_snapshot_id)
 
 def get_last_snapshot_json(s3, bkt, count=1, cf=None, ecr=None):
     return get_snapshot_json(s3, bkt, get_last_snapshot_id(s3, bkt, count))
@@ -407,20 +410,22 @@ def update_pkgs(args, sha, s3, ecr, bkt, cf=None):
 # Propose the new snapshot
 
 def propose(args, resources):
+
     shas = update_shas(args, resources[Act.build], resources[Act.beta])
     pkgs = update_pkgs(args, shas, **resources[Act.build])
-    prod = json.loads(get_current_snapshot_json(**resources[Act.prod]))
-    prod['cbmc'] = pkgs[Pkg.cbmc] or prod['cbmc']
-    prod['batch'] = pkgs[Pkg.batch] or prod['batch']
-    prod['templates'] = pkgs[Pkg.template] or prod['templates']
-    prod['lambda'] = pkgs[Pkg.lambd] or prod['lambda']
-    prod['docker'] = pkgs[Pkg.docker] or prod['docker']
-    prod['viewer'] = pkgs[Pkg.viewer] or prod['viewer']
-    del prod['parameters']['ImageTagSuffix']
-    del prod['parameters']['SnapshotID']
+    current_snapshot_id = get_current_snapshot_id(resources[Act.prod]["cf"])
+    build_snapshot = json.loads(get_current_snapshot_json(resources[Act.build]["s3"], resources[Act.build]["bkt"], current_snapshot_id=current_snapshot_id))
+    build_snapshot['cbmc'] = pkgs[Pkg.cbmc] or build_snapshot['cbmc']
+    build_snapshot['batch'] = pkgs[Pkg.batch] or build_snapshot['batch']
+    build_snapshot['templates'] = pkgs[Pkg.template] or build_snapshot['templates']
+    build_snapshot['lambda'] = pkgs[Pkg.lambd] or build_snapshot['lambda']
+    build_snapshot['docker'] = pkgs[Pkg.docker] or build_snapshot['docker']
+    build_snapshot['viewer'] = pkgs[Pkg.viewer] or build_snapshot['viewer']
+    del build_snapshot['parameters']['ImageTagSuffix']
+    del build_snapshot['parameters']['SnapshotID']
 
-    logging.info('Proposing snapshot: %s', prod)
-    return prod
+    logging.info('Proposing snapshot: %s', build_snapshot)
+    return build_snapshot
 
 def initial(args, resources):
     shas = update_shas(args, resources[Act.build], resources[Act.beta])
@@ -440,7 +445,9 @@ def initial(args, resources):
 ################################################################
 
 def main():
+
     args = parse_args()
+
     resources = aws_resources(args)
 
     if args.show_current_snapshot:
