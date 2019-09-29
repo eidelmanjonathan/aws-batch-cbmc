@@ -49,7 +49,11 @@ set to us-west-2.
 
 ## Deploy the continuous integration infrastructure
 
-* Choose email addresses:
+The continuous integration infrastructure is divided into two accounts. One account maintains builds of all the tools 
+that are used for the Padstone project like CBMC, CBMC Batch etc... The second account actually performs the proofs. 
+Many different Proof accounts (Beta, Prod, Development) can share the same Tool account.
+
+* Choose email addresses (For each account, both Tool Build and Proof accounts):
 
     * NOTIFICATION_ADDRESS: Error events will send email to this address.  Use
 
@@ -110,7 +114,7 @@ set to us-west-2.
       "NotificationAddress": "NOTIFICATION_ADDRESS",
       "SIMAddress": "SIM_ADDRESS",
       "BatchCodeCommitBranchName": "snapshot",
-      "GitHubRepository": "markrtuttle/amazon-freertos"
+      "GitHubRepository": "aws/amazon-freertos"
 
     }
   }
@@ -121,9 +125,13 @@ set to us-west-2.
   are required, and "BatchCodeCommitBranchName" must be set to "snapshot".
   ProjectName cannot contain a space or other "illegal" characters.
 
-* Deploy the global stack
+* If you are setting up both a tool building account and a proof account, run the following command:
 
-        snapshot-deploy --profile $PROFILE --doit --globals --snapshot snapshot.json
+        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --is-init
+
+* If you are using an existing tool building account, and are setting up a proof account, run the following command:
+        
+        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE
 
 * Create CodeCommit replications of the CBMC-batch and CBMC-coverage
   GitFarm repositories at
@@ -136,60 +144,6 @@ set to us-west-2.
         arn:aws:iam::AWS_ACCOUNT_ID:role/picapica-role
 
   and repository names CBMC-batch and CBMC-coverage respectively.
-
-* Deploy the build stacks
-
-        snapshot-deploy --profile $PROFILE --build --snapshot snapshot.json
-
-* Wait for the stacks to build packages in the package folder of the
-  S3 bucket.  You can watch the jobs running in CodeBuild (in the
-  build history).
-  The S3 bucket will be something like
-
-        AWS_ACCOUNT_ID-us-west-2-cbmc
-
-  It will contain folders
-
-        package/batch
-        package/cbmc
-        package/lambda
-        package/template
-        package/viewer
-
-  containing packages with names like
-  cbmc-batch-YYYYMMDD-HHMMSS-COMMITID.tar.gz.
-  Select the versions you want to use and fill out the
-  configuration file snapshot.json with something like
-
-        {
-          "batch": "cbmc-batch-20190228-154844-1d120e4e.tar.gz",
-          "cbmc": "cbmc-20190228-153749-be4cee2f.tar.gz",
-          "docker": "20190228-153833-1d120e4e",
-          "lambda": "lambda-20190228-154844-1d120e4e.zip",
-          "templates": "template-20190228-154844-1d120e4e.tar.gz",
-          "viewer": "cbmc-viewer-20190228-154724-46e03afb.tar.gz",
-          "parameters": {
-            "ProjectName": "MQTT-Beta",
-            "GitHubRepository": "markrtuttle/amazon-freertos",
-            "NotificationAddress": "NOTIFICATION_ADDRESS",
-            "SIMAddress": "SIM_ADDRESS"
-          }
-        }
-
-  Be sure the commit ids COMMITID are the same for batch, docker,
-  lambda, and templates.  Notice that docker is just the suffix
-  appended to the names of the other files.
-
-* Create a Snapshot
-
-        snapshot-create --profile $PROFILE --snapshot snapshot.json
-
-  Notice the name snapshot-YYYYMMDD-HHMMSS of the directory created.
-  The suffix YYYYMMDD-HHMMSS is the snapshot id.
-
-* Deploy the production stacks
-
-        snapshot-deploy --profile $PROFILE --prod --snapshotid YYYYMMDD-HHMMSS
 
 
 * Configure the web hook on GitHub. The required ID is the id listed by

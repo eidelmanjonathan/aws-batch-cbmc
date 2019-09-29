@@ -258,8 +258,7 @@ def deploy_alarms_build(stacks, snapshot, secrets, local=False):
             'BuildCBMCLinuxPipeline'],
            stacks, snapshot, secrets)
 
-def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
-    print("Deploying github with " + str(build_tools_s3_bucket))
+def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('github',
            "github.yaml",
@@ -271,14 +270,14 @@ def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local=False)
            stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
 
-def deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
+def deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('cbmc-batch',
            "cbmc.yaml",
            ['ImageTagSuffix'],
            stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
+def deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('alarms-prod',
            "alarms-prod.yaml",
@@ -287,7 +286,7 @@ def deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=F
             'NotificationAddress'],
            stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
+def deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('canary',
            "canary.yaml",
@@ -370,7 +369,6 @@ def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
         return False
 
     deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local)
-    print("Github deployed!")
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
         print("Stacks not successful: {}".format(stks))
@@ -409,11 +407,11 @@ def main():
     args = create_parser().parse_args()
 
     session = boto3.session.Session(profile_name=args.profile)
-    print("Making stacks")
     stacks = stackst.Stacks(session)
-    print("Made stacks")
     snapshot = None
     build_tools_bucket = None
+
+    # If we are deploying a proof/prod account, we must get the snapshot from the shared build account
     if args.snapshotid and args.prod:
         build_session = boto3.session.Session(profile_name=args.build_profile)
         build_stacks = stackst.Stacks(build_session)
@@ -426,6 +424,8 @@ def main():
         build_session.client('s3').download_file(Bucket=build_tools_bucket, Key=key, Filename=snapshot_file)
         snapshot = snapshott.Snapshot(filename=snapshot_file)
         args.local = False
+
+    # If we are setting up the build account itself, we only need to reference the build account
     elif args.snapshotid:
         snapshot_id = args.snapshotid
         snapshot_file = "snapshot-{}.json".format(snapshot_id)
@@ -452,7 +452,7 @@ def main():
             return False
 
         account_id = session.client('sts').get_caller_identity()['Account']
-        # chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
+        chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
 
     return True
 

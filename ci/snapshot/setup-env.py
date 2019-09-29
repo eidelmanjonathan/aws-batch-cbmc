@@ -33,10 +33,14 @@ def create_parser():
     Deploy the stacks as described by a snapshot.
     """)
 
-    arg.add_argument('--profile',
+    arg.add_argument('--build-profile',
                      metavar='NAME',
-                     help='AWS account profile name'
+                     help='AWS account for build tools'
                     )
+
+    arg.add_argument('--proof-profile',
+                     metavar='NAME',
+                     help='AWS account for performing proofs')
     arg.add_argument('--snapshot',
                      metavar='FILE',
                      required=True,
@@ -95,8 +99,11 @@ class EnvironmentSetup:
         return matching_snapshot_ids[0].replace("snapshot-", "")
 
 
-    def trigger_deploy_prod_stacks(self, timestamp_str):
-        return os.popen("./snapshot-deploy --profile {0} --prod --snapshotid {1}".format(self.profile, timestamp_str)).read()
+    def trigger_deploy_prod_stacks(self, timestamp_str, build_profile):
+        cmd = "./snapshot-deploy --profile {0} --prod --snapshotid {1} --build-tools-s3 {2} --build-profile {3}"\
+            .format(self.profile, timestamp_str, "677072028621-us-west-2-cbmc", build_profile)
+        print("Running: " + cmd)
+        return os.popen(cmd).read()
 
     def get_docker_image_suffix_from_ecr(self):
         return self.ecr_client.list_images(repositoryName="cbmc")["imageIds"][0]["imageTag"].replace("ubuntu16-gcc-", "")
@@ -140,7 +147,7 @@ class EnvironmentSetup:
         self.snapshot.snapshot["cbmc"] = package_filenames.get("cbmc")
         self.snapshot.snapshot["lambda"] = package_filenames.get("lambda")
         self.snapshot.snapshot["viewer"] = package_filenames.get("viewer")
-        self.snapshot.snapshot["docker"] = package_filenames.get("docker")
+        self.snapshot.snapshot["do"] = package_filenames.get("docker")
         self.snapshot.snapshot["templates"] = package_filenames.get("templates")
         self.snapshot.write("updated_snapshot.json")
 
@@ -166,8 +173,8 @@ class EnvironmentSetup:
 def main():
     args = create_parser().parse_args()
     snapshot = snapshott.Snapshot(filename=args.snapshot)
-    session = boto3.session.Session(profile_name=args.profile)
-    envSetup = EnvironmentSetup(session, args.profile, args.snapshot, snapshot)
+    session = boto3.session.Session(profile_name=args.build_profile)
+    envSetup = EnvironmentSetup(session, args.build_profile, args.snapshot, snapshot)
     # Verify email address if necessary
     if args.email:
         envSetup.verify_email_address(args.email)
@@ -176,6 +183,7 @@ def main():
         envSetup.set_git_access_token(args.git_access_token)
 
     print(envSetup.trigger_deploy_global_stack())
+
     print(envSetup.trigger_deploy_build_stacks())
 
     envSetup.wait_for_pipeline_completion("Build-CBMC-Linux-Pipeline")
@@ -183,14 +191,28 @@ def main():
     envSetup.wait_for_pipeline_completion("Build-Viewer-Pipeline")
     envSetup.wait_for_pipeline_completion("Build-Batch-Pipeline")
 
-    package_filenames = envSetup.get_package_filenames_from_s3()
-    envSetup.update_and_write_snapshot(package_filenames)
+    # package_filenames = envSetup.get_package_filenames_from_s3()
+    # envSetup.update_and_write_snapshot(package_filenames)
+    #
+    # snapshot_id = envSetup.trigger_create_snapshot()
+    # print(envSetup.trigger_deploy_prod_stacks(snapshot_id))
 
-    snapshot_id = envSetup.trigger_create_snapshot()
-    print(envSetup.trigger_deploy_prod_stacks(snapshot_id))
 
+def deploy_proof_account():
+    args = create_parser().parse_args()
+    snapshot = snapshott.Snapshot(filename=args.snapshot)
+    build_tool_session = boto3.session.Session(profile_name=args.build_profile)
+    proof_session = boto3.session.Session(profile_name=args.proof_profile)
+    build_env_setup = EnvironmentSetup(build_tool_session, args.build_profile, args.snapshot, snapshot)
+    proof_env_setup = EnvironmentSetup(proof_session, args.proof_profile, args.snapshot, snapshot)
 
+    package_filenames = build_env_setup.get_package_filenames_from_s3()
+    build_env_setup.update_and_write_snapshot(package_filenames)
+
+    snapshot_id = build_env_setup.trigger_create_snapshot()
+    print(proof_env_setup.trigger_deploy_prod_stacks(snapshot_id, args.build_profile))
 
 if __name__ == "__main__":
     main()
+    deploy_proof_account()
     print("done")

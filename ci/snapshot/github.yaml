@@ -390,11 +390,11 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "arn:aws:s3:::${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}", "*"]]
+                Resource: !Join ["/", [!Ref S3BucketProofs, "*"]]
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub "arn:aws:s3:::${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}"
+                Resource: !Ref S3BucketProofs
               - Action:
                   - secretsmanager:GetSecretValue
                 Effect: Allow
@@ -432,7 +432,7 @@ Resources:
             Value: !Ref S3BucketToolsName
           - Name: S3_BUCKET_PROOFS
             Type: PLAINTEXT
-            Value: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}"
+            Value: !Ref S3BucketProofs
           - Name: S3_BKT
             Type: PLAINTEXT
             Value: !Ref S3BucketToolsName

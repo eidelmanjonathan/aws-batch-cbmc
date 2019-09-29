@@ -334,7 +334,7 @@ def generate_cbmc_jobs(src, repo_id, repo_sha, is_draft, tarfile):
     tasks = find_tasks(PROOF_MARKERS, src)
     print("{} tasks found".format(len(tasks)))
 
-    for (proofname, proofdir) in tasks[:1]:
+    for (proofname, proofdir) in tasks:
         # pylint: disable=broad-except
         try:
             # Try to run batch

@@ -50,9 +50,6 @@ def create_parser():
                      help='The AWS account profile (the default for beta, prod, build).'
                     )
 
-    arg.add_argument('--first-time-deploy',
-                     type=bool, default=False,
-                     help='Is this the first time deplpoying this')
     arg.add_argument('--beta-profile',
                      metavar='PROFILE',
                      help='The AWS account profile for the beta account.'
