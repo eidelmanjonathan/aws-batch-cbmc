@@ -34,7 +34,7 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              SSEAlgorithm: AWSKMS
 
   BatchLambdaRole:
     Type: AWS::IAM::Role
