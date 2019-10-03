@@ -44,6 +44,10 @@ def create_parser():
                      action="store_true",
                      help='Deploy global stack'
                     )
+
+    arg.add_argument('--cloudfront',
+                     action='store_true',
+                     help="Deploy cloudfront - note that this must be in us-east-1")
     arg.add_argument('--build',
                      action="store_true",
                      help='Deploy build stacks'
@@ -255,6 +259,12 @@ def deploy_github(stacks, snapshot, secrets, local=False):
             'GitHubBranchName'],
            stacks, snapshot, secrets)
 
+def deploy_cloudfront(stacks, snapshot, secrets, local=False):
+    deploy = deploy_stack_local if local else deploy_stack_s3
+    deploy('cloudfront-deployment',
+           "build-cloudfront.yaml",
+           ['S3BucketName'],
+           stacks, snapshot, secrets)
 
 def deploy_cbmc_batch(stacks, snapshot, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
@@ -419,9 +429,12 @@ def main():
     if args.prod:
         if not deploy_prod(stacks, snapshot, secrets, args.local):
             return False
-
         account_id = session.client('sts').get_caller_identity()['Account']
         chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
+
+    if args.cloudfront:
+        if not deploy_cloudfront(stacks, snapshot, secrets, args.local):
+            return False
 
     return True
 
