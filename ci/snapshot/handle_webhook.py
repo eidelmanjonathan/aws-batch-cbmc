@@ -147,7 +147,7 @@ def lambda_handler(event, context):
           event['correlation_list'] = logger.create_child_correlation_list()
           logger.launch_child("cbmc_ci_start:lambda_handler", None, event['correlation_list'])
           result = lc.invoke(
-              FunctionName='${InvokeBatchLambda}',
+              FunctionName='InvokeBatchLambda',
               Payload=json.dumps(event))
           response['statusCode'] = result['StatusCode']
   except Exception as e:
