@@ -21,7 +21,7 @@ SUCCEEDED = "COMPLETED:SUCCEEDED"
 FAILED = "COMPLETED:FAILED"
 LAUNCH_SUCCEEDED = "LAUNCHED:SUCCEEDED"
 LAUNCH_FAILED = "LAUNCHED:FAILED"
-
+INVOKE_BATCH_LAMBDA_FN_NAME = os.getenv("INVOKE_BATCH_LAMBDA_FN_NAME")
 def is_completed_status(status):
   return status == SUCCEEDED or status == FAILED or status == IGNORED
 
@@ -147,7 +147,7 @@ def lambda_handler(event, context):
           event['correlation_list'] = logger.create_child_correlation_list()
           logger.launch_child("cbmc_ci_start:lambda_handler", None, event['correlation_list'])
           result = lc.invoke(
-              FunctionName='InvokeBatchLambda',
+              FunctionName=INVOKE_BATCH_LAMBDA_FN_NAME,
               Payload=json.dumps(event))
           response['statusCode'] = result['StatusCode']
   except Exception as e:
