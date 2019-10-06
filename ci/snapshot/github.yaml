@@ -177,7 +177,7 @@ Resources:
       Environment:
         Variables:
           CBMC_CI_OPERATIONAL: True
-          INVOKE_BATCH_LAMBDA_FN_NAME: ${InvokeBatchLambda}
+          INVOKE_BATCH_LAMBDA_FN_NAME: !Sub "${InvokeBatchLambda}"
       Code:
         S3Bucket: !Ref S3BucketName
         S3Key: !Sub "snapshot/snapshot-${SnapshotID}/lambda.zip"
