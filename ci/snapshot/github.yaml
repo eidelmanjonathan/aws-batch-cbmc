@@ -390,11 +390,11 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!GetAtt S3BucketProofs.arn, "*"]]
+                Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !GetAtt S3BucketProofs.arn
+                Resource: !Sub "${S3BucketProofs.Arn}"
               - Action:
                   - secretsmanager:GetSecretValue
                 Effect: Allow
