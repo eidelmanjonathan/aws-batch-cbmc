@@ -445,7 +445,10 @@ def main():
                 return False
             deploy_bucket_policy(build_stacks, snapshot, build_secrets, build_tools_bucket,
                                  args.profile_account_id, args.local)
-            stacks.wait_for_stable_stacks(stks)
+            build_stacks.wait_for_stable_stacks(stks)
+            if not build_stacks.successful_stacks(stks):
+                print("Stacks not successful: {}".format(stks))
+                return False
 
 
     # If we are setting up the build account itself, we only need to reference the build account
