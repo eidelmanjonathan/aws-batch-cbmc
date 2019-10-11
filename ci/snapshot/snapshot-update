@@ -28,6 +28,9 @@ def create_parser():
                      metavar='PROFILE',
                      help='The AWS account profile (the default for beta, prod, build).'
                     )
+    arg.add_argument('--profile-account-id',
+                     metavar='ID',
+                     help="The account ID that we need to grant read access to the build tools account")
     arg.add_argument('--beta-profile',
                      metavar='PROFILE',
                      help='The AWS account profile for the beta account.'
@@ -262,8 +265,13 @@ def main():
 
     cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
     run(cmd.format(build_profile, sid))
-    cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --profile-account-id 588940935637'
-    run(cmd.format(profile, build_profile, sid))
+    if args.profile_account_id:
+        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --profile-account-id {}'
+        run(cmd.format(profile, build_profile, sid, args.profile_account_id))
+    else:
+        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
+        run(cmd.format(profile, build_profile, sid))
+
     cmd = './snapshot-variable --profile {} --operational'
     run(cmd.format(profile))
     if args.is_prod:

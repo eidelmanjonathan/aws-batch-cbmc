@@ -85,13 +85,13 @@ def get_value(name, stacks, snapshot, secrets):
     except:
         return None
 
-def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_id=None):
+def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
     parameters = []
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
             value = s3_bucket_tools_name
-        elif key=="ProofAccountId" and proof_account_id:
-            value = proof_account_id
+        elif key=="ProofAccountIds" and proof_account_ids:
+            value = str(list(map(lambda p: "arn:aws:iam::{}:root".format(p), proof_account_ids)))
         else:
             value = get_value(key, stacks, snapshot, secrets)
         if value is not None:
@@ -145,7 +145,7 @@ def deploy_stack_s3(stack_name, template_name, parameter_keys,
                              snapshot.get_parameter('SnapshotID'),
                              template_name))
     parameters = make_parameters(parameter_keys, stacks, snapshot, secrets,
-                                 s3_bucket_tools_name=s3_bucket_tools_name, proof_account_id=proof_account_id)
+                                 s3_bucket_tools_name=s3_bucket_tools_name, proof_account_ids=["509240887788", proof_account_id])
     capabilities = ['CAPABILITY_NAMED_IAM']
 
     try:
@@ -306,7 +306,7 @@ def deploy_bucket_policy(stacks, snapshot, secrets, build_tools_s3_bucket=None, 
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy("bucket-policy",
            "bucket-policy.yaml",
-           ["S3BucketToolsName", "ProofAccountId"],
+           ["S3BucketToolsName", "ProofAccountIds"],
            stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket, proof_account_id=proof_account_id)
 ################################################################
 

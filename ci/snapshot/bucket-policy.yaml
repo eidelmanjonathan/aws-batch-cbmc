@@ -4,9 +4,11 @@ Parameters:
     Type: String
     Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
 
-  ProofAccountId:
-    Type: String
-    Description: "ID number of the proof account"
+  ProofAccountIds:
+    Type: Array
+    items:
+        Type: String
+    Description: "ID numbers of the proof account"
 Resources:
 
   S3AccessIdentity:
@@ -28,5 +30,6 @@ Resources:
             Resource: [!Join [ "", [ "arn:aws:s3:::", !Ref S3BucketToolsName, "/*" ] ],
                        !Join [ "", [ "arn:aws:s3:::", !Ref S3BucketToolsName, "" ] ]]
             Principal:
-              AWS: !Sub "arn:aws:iam::${ProofAccountId}:root"
+              AWS: !Ref ProofAccountIds
+#              AWS: !Sub "arn:aws:iam::${ProofAccountId}:root"
 
