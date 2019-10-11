@@ -262,7 +262,7 @@ def main():
 
     cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
     run(cmd.format(build_profile, sid))
-    cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
+    cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --profile-account-id 588940935637'
     run(cmd.format(profile, build_profile, sid))
     cmd = './snapshot-variable --profile {} --operational'
     run(cmd.format(profile))

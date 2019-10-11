@@ -29,6 +29,10 @@ def create_parser():
                      help='AWS account profile name'
                     )
 
+    arg.add_argument('--profile-account-id',
+                     metavar="ID",
+                     help="AWS account ID if we need to give read permissions to build account")
+
     arg.add_argument('--build-profile',
                      metavar='NAME',
                      help='AWS build tools account profile name')
@@ -81,11 +85,13 @@ def get_value(name, stacks, snapshot, secrets):
     except:
         return None
 
-def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None):
+def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_id=None):
     parameters = []
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
             value = s3_bucket_tools_name
+        elif key=="ProofAccountId" and proof_account_id:
+            value = proof_account_id
         else:
             value = get_value(key, stacks, snapshot, secrets)
         if value is not None:
@@ -129,7 +135,7 @@ def deploy_stack_local(stack_name, template_name, parameter_keys,
             raise
 
 def deploy_stack_s3(stack_name, template_name, parameter_keys,
-                    stacks, snapshot, secrets, s3_bucket_tools_name=None):
+                    stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_id=None):
     print("Deplopying stack s3: " + str(s3_bucket_tools_name))
     stack_name = stack_name
     s3_bucket_tools_name = s3_bucket_tools_name if s3_bucket_tools_name else stacks.get_output('S3BucketName')
@@ -138,7 +144,8 @@ def deploy_stack_s3(stack_name, template_name, parameter_keys,
                      .format(s3_bucket_tools_name,
                              snapshot.get_parameter('SnapshotID'),
                              template_name))
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets, s3_bucket_tools_name=s3_bucket_tools_name)
+    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets,
+                                 s3_bucket_tools_name=s3_bucket_tools_name, proof_account_id=proof_account_id)
     capabilities = ['CAPABILITY_NAMED_IAM']
 
     try:
@@ -295,6 +302,12 @@ def deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=F
             'GitHubLambdaAPI'],
            stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
+def deploy_bucket_policy(stacks, snapshot, secrets, build_tools_s3_bucket=None, proof_account_id=None, local=False):
+    deploy = deploy_stack_local if local else deploy_stack_s3
+    deploy("bucket-policy",
+           "bucket-policy.yaml",
+           ["S3BucketToolsName", "ProofAccountId"],
+           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket, proof_account_id=proof_account_id)
 ################################################################
 
 def deploy_build_globals(stacks, snapshot, secrets, doit=None, local=False):
@@ -424,6 +437,14 @@ def main():
         build_session.client('s3').download_file(Bucket=build_tools_bucket, Key=key, Filename=snapshot_file)
         snapshot = snapshott.Snapshot(filename=snapshot_file)
         args.local = False
+        if args.profile_account_id:
+            build_secrets = secretst.Secrets(build_session)
+            stks = ["bucket-policy"]
+            if not build_stacks.stable_stacks(stks):
+                print("Stacks not stable: {}".format(stks))
+                return False
+            deploy_bucket_policy(build_stacks, snapshot, build_secrets, build_tools_bucket,
+                                 args.profile_account_id, args.local)
 
     # If we are setting up the build account itself, we only need to reference the build account
     elif args.snapshotid:
@@ -447,12 +468,13 @@ def main():
         if not deploy_build(stacks, snapshot, secrets, args.local):
             return False
     if args.prod:
-
-        if not deploy_prod(stacks, snapshot, secrets, build_tools_bucket, args.local ):
+        if not deploy_prod(stacks, snapshot, secrets, build_tools_bucket, args.local):
             return False
 
-        account_id = session.client('sts').get_caller_identity()['Account']
-        chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
+
+
+        # account_id = session.client('sts').get_caller_identity()['Account']
+        # chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
 
     return True
 
