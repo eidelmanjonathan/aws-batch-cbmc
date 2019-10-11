@@ -5,9 +5,7 @@ Parameters:
     Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
 
   ProofAccountIds:
-    Type: Array
-    items:
-        Type: String
+    Type: CommaDelimitedList
     Description: "ID numbers of the proof account"
 Resources:
 
