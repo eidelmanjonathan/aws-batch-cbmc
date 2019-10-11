@@ -25,7 +25,7 @@ Resources:
               - s3:ListBucket
               - s3:GetObject
             Effect: Allow
-            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref S3BucketToolsName, "/*" ] ]
+            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref S3BucketToolsName ] ]
             Principal:
               AWS: !Sub "arn:aws:iam::${ProofAccountId}:root"
 

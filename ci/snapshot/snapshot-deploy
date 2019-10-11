@@ -445,6 +445,8 @@ def main():
                 return False
             deploy_bucket_policy(build_stacks, snapshot, build_secrets, build_tools_bucket,
                                  args.profile_account_id, args.local)
+            stacks.wait_for_stable_stacks(stks)
+
 
     # If we are setting up the build account itself, we only need to reference the build account
     elif args.snapshotid:
