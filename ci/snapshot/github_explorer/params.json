@@ -1,0 +1,9 @@
+{
+  "git-authentication": "EXAMPLE",
+  "git-repo": "amazon-freertos",
+  "git-owner": "aws",
+  "local-repo-folder": "/Users/jeid/aws_projects/amazon-freertos/",
+  "proofs-root-folder": "/tools/cbmc/proofs",
+  "makefile": "/Users/jeid/aws_projects/amazon-freertos//tools/cbmc/proofs/Makefile.common",
+  "makefile-dependency-text": "gcc -M ${INC} ${ENTRY}_harness.c"
+}

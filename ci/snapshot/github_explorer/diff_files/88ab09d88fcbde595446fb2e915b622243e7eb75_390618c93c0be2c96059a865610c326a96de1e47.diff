@@ -1,0 +1,2285 @@
+diff --git a/libraries/abstractions/pkcs11/mbedtls/iot_pkcs11_mbedtls.c b/libraries/abstractions/pkcs11/mbedtls/iot_pkcs11_mbedtls.c
+index 62a4b8b50..e92239d40 100644
+--- a/libraries/abstractions/pkcs11/mbedtls/iot_pkcs11_mbedtls.c
++++ b/libraries/abstractions/pkcs11/mbedtls/iot_pkcs11_mbedtls.c
+@@ -112,9 +112,11 @@ typedef struct P11ObjectList_t
+ /* PKCS #11 Module Object */
+ typedef struct P11Struct_t
+ {
+-    CK_BBOOL xIsInitialized;     /* Indicates whether PKCS #11 module has been initialized with a call to C_Initialize. */
+-    P11ObjectList_t xObjectList; /* List of PKCS #11 objects that have been found/created since module initialization.
+-                                  * The array position indicates the "App Handle"  */
++    CK_BBOOL xIsInitialized;                     /* Indicates whether PKCS #11 module has been initialized with a call to C_Initialize. */
++    mbedtls_ctr_drbg_context xMbedDrbgCtx;       /* CTR-DRBG context for PKCS #11 module - used to generate pseudo-random numbers. */
++    mbedtls_entropy_context xMbedEntropyContext; /* Entropy context for PKCS #11 module - used to collect entropy for RNG. */
++    P11ObjectList_t xObjectList;                 /* List of PKCS #11 objects that have been found/created since module initialization.
++                                                  * The array position indicates the "App Handle"  */
+ } P11Struct_t, * P11Context_t;
+ 
+ /* The global PKCS #11 module object.
+@@ -263,7 +265,23 @@ CK_RV prvMbedTLS_Initialize( void )
+         memset( &xP11Context, 0, sizeof( xP11Context ) );
+         xP11Context.xObjectList.xMutex = xSemaphoreCreateMutex();
+ 
+-        xP11Context.xIsInitialized = CK_TRUE;
++        CRYPTO_Init();
++        /* Initialize the entropy source and DRBG for the PKCS#11 module */
++        mbedtls_entropy_init( &xP11Context.xMbedEntropyContext );
++        mbedtls_ctr_drbg_init( &xP11Context.xMbedDrbgCtx );
++
++        if( 0 != mbedtls_ctr_drbg_seed( &xP11Context.xMbedDrbgCtx,
++                                        mbedtls_entropy_func,
++                                        &xP11Context.xMbedEntropyContext,
++                                        NULL,
++                                        0 ) )
++        {
++            xResult = CKR_FUNCTION_FAILED;
++        }
++        else
++        {
++            xP11Context.xIsInitialized = CK_TRUE;
++        }
+     }
+ 
+     return xResult;
+@@ -679,6 +697,16 @@ CK_DECLARE_FUNCTION( CK_RV, C_Finalize )( CK_VOID_PTR pvReserved )
+ 
+     if( xResult == CKR_OK )
+     {
++        if( NULL != &xP11Context.xMbedEntropyContext )
++        {
++            mbedtls_entropy_free( &xP11Context.xMbedEntropyContext );
++        }
++
++        if( NULL != &xP11Context.xMbedDrbgCtx )
++        {
++            mbedtls_ctr_drbg_free( &xP11Context.xMbedDrbgCtx );
++        }
++
+         vSemaphoreDelete( xP11Context.xObjectList.xMutex );
+ 
+         xP11Context.xIsInitialized = CK_FALSE;
+@@ -3065,8 +3093,8 @@ CK_DECLARE_FUNCTION( CK_RV, C_Sign )( CK_SESSION_HANDLE xSession,
+                                                       ulDataLen,
+                                                       pxSignatureBuffer,
+                                                       ( size_t * ) &xExpectedInputLength,
+-                                                      CRYPTO_GetRandomBytes,
+-                                                      NULL );
++                                                      mbedtls_ctr_drbg_random,
++                                                      &xP11Context.xMbedDrbgCtx );
+ 
+                     if( lMbedTLSResult != CKR_OK )
+                     {
+@@ -3724,8 +3752,8 @@ CK_DECLARE_FUNCTION( CK_RV, C_GenerateKeyPair )( CK_SESSION_HANDLE xSession,
+     {
+         if( 0 != mbedtls_ecp_gen_key( MBEDTLS_ECP_DP_SECP256R1,
+                                       mbedtls_pk_ec( xCtx ),
+-                                      CRYPTO_GetRandomBytes,
+-                                      NULL ) )
++                                      mbedtls_ctr_drbg_random,
++                                      &xP11Context.xMbedDrbgCtx ) )
+         {
+             xResult = CKR_FUNCTION_FAILED;
+         }
+@@ -3785,32 +3813,6 @@ CK_DECLARE_FUNCTION( CK_RV, C_GenerateKeyPair )( CK_SESSION_HANDLE xSession,
+     return xResult;
+ }
+ 
+-
+-/**
+- * @brief Obtain entropy data.
+- *
+- * For mbedTLS-based implementations, this is
+- * a wrapper of mbedtls_hardware_poll()
+- *
+- * @note Note that if the port using NVM seeding,
+- * lPortGetEntropyFromHardware() would need to map to
+- * mbedtls_nv_seed_poll() wrapper instead of
+- * mbedtls_hardware_poll() wrapper.
+- *
+- * @param[in] data      Unused in current implementation.
+- *                      Implementation should be able to
+- *                      accept NULL for this input.
+- * @param[out] output   Location that random bytes should be
+- *                      placed.
+- * @param[len] len      Number of bytes requested.
+- * @param[in/out] olen  Updated to contain the actual number of
+- *                      bytes returned.
+- */
+-extern int lPortGetEntropyFromHardware( void * data,
+-                                        unsigned char * output,
+-                                        size_t len,
+-                                        size_t * olen );
+-
+ /**
+  * @brief Generate cryptographically random bytes.
+  *
+@@ -3828,13 +3830,8 @@ CK_DECLARE_FUNCTION( CK_RV, C_GenerateRandom )( CK_SESSION_HANDLE xSession,
+                                                 CK_BYTE_PTR pucRandomData,
+                                                 CK_ULONG ulRandomLen )
+ {
+-#define ENTROPY_MAX_LOOPS    256
+-
+     CK_RV xResult = CKR_OK;
+-    int lResult = 0;
+-    size_t olen = 0;
+-    int lLoops = 0;
+-    int totalBytes = 0;
++    int lMbedResult = 0;
+ 
+     xResult = PKCS11_SESSION_VALID_AND_MODULE_INITIALIZED( xSession );
+ 
+@@ -3846,35 +3843,14 @@ CK_DECLARE_FUNCTION( CK_RV, C_GenerateRandom )( CK_SESSION_HANDLE xSession,
+ 
+     if( xResult == CKR_OK )
+     {
+-        while( ( lLoops < ENTROPY_MAX_LOOPS ) && ( totalBytes < ulRandomLen ) )
+-        {
+-            lResult = lPortGetEntropyFromHardware( NULL,
+-                                                   &pucRandomData[ totalBytes ],
+-                                                   ulRandomLen - totalBytes,
+-                                                   &olen );
+-
+-            if( lResult != 0 )
+-            {
+-                break;
+-            }
+-
+-            totalBytes += olen;
+-            lLoops++;
++        lMbedResult = mbedtls_ctr_drbg_random( &xP11Context.xMbedDrbgCtx, pucRandomData, ulRandomLen );
+ 
+-            /* If no entropy was returned, give the hardware time
+-             * to generate additional entropy. */
+-            if( olen == 0 )
+-            {
+-                vTaskDelay( 1 );
+-            }
++        if( lMbedResult != 0 )
++        {
++            PKCS11_PRINT( ( "ERROR: DRBG failed %d \r\n", lMbedResult ) );
++            xResult = CKR_FUNCTION_FAILED;
+         }
+     }
+ 
+-    if( ( lResult != 0 ) || ( totalBytes != ulRandomLen ) )
+-    {
+-        PKCS11_PRINT( ( "ERROR: Failed to get entropy from hardware. Error %d, Bytes Generated %d, Bytes Requested %d\r\n ", lResult, olen, ulRandomLen ) );
+-        xResult = CKR_FUNCTION_FAILED;
+-    }
+-
+     return xResult;
+ }
+diff --git a/libraries/abstractions/pkcs11/test/iot_test_pkcs11.c b/libraries/abstractions/pkcs11/test/iot_test_pkcs11.c
+index 666459124..0b7826612 100644
+--- a/libraries/abstractions/pkcs11/test/iot_test_pkcs11.c
++++ b/libraries/abstractions/pkcs11/test/iot_test_pkcs11.c
+@@ -110,7 +110,7 @@ TEST_GROUP( Full_PKCS11_RSA );
+ /* The EC test group is for tests that require elliptic curve keys. */
+ TEST_GROUP( Full_PKCS11_EC );
+ 
+-/*#define PKCS11_TEST_MEMORY_LEAK */
++/* #define PKCS11_TEST_MEMORY_LEAK */
+ #ifdef PKCS11_TEST_MEMORY_LEAK
+     BaseType_t xHeapBefore;
+     BaseType_t xHeapAfter;
+@@ -1042,8 +1042,9 @@ static void prvGenerateRandomMultiThreadTask( void * pvParameters )
+ 
+     for( xCount = 0; xCount < pkcs11testMULTI_THREAD_LOOP_COUNT; xCount++ )
+     {
+-        /* TS-9475 */
+-        xResult = CRYPTO_GetRandomBytes( NULL, xRandomData, sizeof( xRandomData ) );
++        xResult = pxGlobalFunctionList->C_GenerateRandom( xSession,
++                                                          xRandomData,
++                                                          sizeof( xRandomData ) );
+ 
+         if( xResult != CKR_OK )
+         {
+diff --git a/libraries/abstractions/secure_sockets/freertos_plus_tcp/iot_secure_sockets.c b/libraries/abstractions/secure_sockets/freertos_plus_tcp/iot_secure_sockets.c
+index c57027c4c..5ce7fc55e 100644
+--- a/libraries/abstractions/secure_sockets/freertos_plus_tcp/iot_secure_sockets.c
++++ b/libraries/abstractions/secure_sockets/freertos_plus_tcp/iot_secure_sockets.c
+@@ -635,20 +635,32 @@ static CK_RV prvSocketsGetCryptoSession( SemaphoreHandle_t * pxSessionLock,
+ uint32_t ulRand( void )
+ {
+     CK_RV xResult = 0;
+-
++    SemaphoreHandle_t xSessionLock = NULL;
++    CK_SESSION_HANDLE xPkcs11Session = 0;
++    CK_FUNCTION_LIST_PTR pxPkcs11FunctionList = NULL;
+     uint32_t ulRandomValue = 0;
+ 
+-    xResult = CRYPTO_GetRandomBytes( NULL, &ulRandomValue, sizeof( ulRandomValue ) );
++    xResult = prvSocketsGetCryptoSession( &xSessionLock,
++                                          &xPkcs11Session,
++                                          &pxPkcs11FunctionList );
++
++    if( 0 == xResult )
++    {
++        /* Request a sequence of cryptographically random byte values using
++         * PKCS#11. */
++        xResult = pxPkcs11FunctionList->C_GenerateRandom( xPkcs11Session,
++                                                          ( CK_BYTE_PTR ) &ulRandomValue,
++                                                          sizeof( ulRandomValue ) );
++    }
+ 
+     /* Check if any of the API calls failed. */
+-    if( CKR_OK != xResult )
++    if( 0 != xResult )
+     {
+         ulRandomValue = 0;
+     }
+ 
+     return ulRandomValue;
+ }
+-
+ /*-----------------------------------------------------------*/
+ 
+ /**
+@@ -683,7 +695,9 @@ uint32_t ulApplicationGetNextSequenceNumber( uint32_t ulSourceAddress,
+         if( CK_FALSE == xKeyIsInitialized )
+         {
+             /* One-time initialization, per boot, of the random seed. */
+-            xResult = CRYPTO_GetRandomBytes( NULL, &ullKey, sizeof( ullKey ) );
++            xResult = pxPkcs11FunctionList->C_GenerateRandom( xPkcs11Session,
++                                                              ( CK_BYTE_PTR ) &ullKey,
++                                                              sizeof( ullKey ) );
+ 
+             if( xResult == CKR_OK )
+             {
+diff --git a/libraries/freertos_plus/standard/crypto/CMakeLists.txt b/libraries/freertos_plus/standard/crypto/CMakeLists.txt
+index 2de2e2ac6..739c00a0b 100644
+--- a/libraries/freertos_plus/standard/crypto/CMakeLists.txt
++++ b/libraries/freertos_plus/standard/crypto/CMakeLists.txt
+@@ -19,7 +19,6 @@ afr_module_include_dirs(
+ afr_module_dependencies(
+     ${AFR_CURRENT_MODULE}
+     PRIVATE 3rdparty::mbedtls
+-    PRIVATE AFR::pkcs11
+ )
+ 
+ # Crypto test
+diff --git a/libraries/freertos_plus/standard/crypto/include/iot_crypto.h b/libraries/freertos_plus/standard/crypto/include/iot_crypto.h
+index 9686ce6bb..c5012fda4 100644
+--- a/libraries/freertos_plus/standard/crypto/include/iot_crypto.h
++++ b/libraries/freertos_plus/standard/crypto/include/iot_crypto.h
+@@ -28,11 +28,6 @@
+ 
+ #include "FreeRTOS.h"
+ 
+-/*
+- * Error codes
+- */
+-#define CRYPTO_ERROR_RNG             0x3000
+-
+ /**
+  * @brief Commonly used buffer sizes for storing cryptographic hash computation
+  * results.
+@@ -61,13 +56,6 @@ void CRYPTO_ConfigureThreading( void );
+  */
+ void CRYPTO_ConfigureHeap( void );
+ 
+-/**
+- * @brief Initializes the CRYPTO-maintained DRBG.
+- *
+- */
+-void CRYPTO_ConfigureDRBG( void );
+-
+-
+ /**
+  * @brief Library-independent cryptographic algorithm identifiers.
+  */
+@@ -76,26 +64,6 @@ void CRYPTO_ConfigureDRBG( void );
+ #define cryptoASYMMETRIC_ALGORITHM_RSA      1
+ #define cryptoASYMMETRIC_ALGORITHM_ECDSA    2
+ 
+-
+-
+-/**
+- * @brief Generate random bytes.
+- *
+- * @param[in] pvContext           Pointer to a context for compatibility with other crypto
+- *                                libraries.  This input is ignored in this port.
+- * @param[out] pRandomBytes       Pointer to the location where random bytes will be
+- *                                placed.  This memory should be allocated by the caller.
+- * @param[in] length              Number of random bytes to be generated.  pRandomBytes
+- *                                must be at least length bytes long.
+- *
+- * @return 0 on success, otherwise error.
+- *
+- */
+-int CRYPTO_GetRandomBytes( void * pvContext,
+-                           uint8_t * pRandomBytes,
+-                           size_t length );
+-
+-
+ /**
+  * @brief Initializes digital signature verification.
+  *
+diff --git a/libraries/freertos_plus/standard/crypto/src/iot_crypto.c b/libraries/freertos_plus/standard/crypto/src/iot_crypto.c
+index 511e34a67..39af644ed 100644
+--- a/libraries/freertos_plus/standard/crypto/src/iot_crypto.c
++++ b/libraries/freertos_plus/standard/crypto/src/iot_crypto.c
+@@ -27,7 +27,6 @@
+ #include "FreeRTOS.h"
+ #include "FreeRTOSIPConfig.h"
+ #include "iot_crypto.h"
+-#include "iot_pkcs11.h"
+ 
+ /* mbedTLS includes. */
+ 
+@@ -42,9 +41,6 @@
+ #include "mbedtls/sha1.h"
+ #include "mbedtls/pk.h"
+ #include "mbedtls/x509_crt.h"
+-#include "mbedtls/ctr_drbg.h"
+-#include "mbedtls/entropy.h"
+-
+ /* Threading mutex implementations for mbedTLS. */
+ #include "mbedtls/threading.h"
+ #include "threading_alt.h"
+@@ -250,7 +246,6 @@ void CRYPTO_Init( void )
+ {
+     CRYPTO_ConfigureHeap();
+     CRYPTO_ConfigureThreading();
+-    CRYPTO_ConfigureDRBG();
+ }
+ 
+ /**
+@@ -265,16 +260,6 @@ void CRYPTO_ConfigureHeap( void )
+ }
+ 
+ 
+-typedef struct CryptoDRBG_t
+-{
+-    CK_BBOOL xIsInitialized;                     /* Indicates whether PKCS #11 module has been initialized with a call to C_Initialize. */
+-    mbedtls_ctr_drbg_context xMbedDrbgCtx;       /* CTR-DRBG context for PKCS #11 module - used to generate pseudo-random numbers. */
+-    mbedtls_entropy_context xMbedEntropyContext; /* Entropy context for PKCS #11 module - used to collect entropy for RNG. */
+-} CryptoDRBG_t;
+-
+-CryptoDRBG_t xDrbg;
+-
+-
+ void CRYPTO_ConfigureThreading( void )
+ {
+     /* Configure mbedtls to use FreeRTOS mutexes. */
+@@ -284,107 +269,6 @@ void CRYPTO_ConfigureThreading( void )
+                                aws_mbedtls_mutex_unlock );
+ }
+ 
+-
+-void CRYPTO_ConfigureDRBG( void )
+-{
+-    int lMbedResult = 0;
+-
+-    /* Initialize the entropy source and DRBG for the CRYPTO module */
+-    mbedtls_entropy_init( &xDrbg.xMbedEntropyContext );
+-    mbedtls_ctr_drbg_init( &xDrbg.xMbedDrbgCtx );
+-
+-    if( 0 != mbedtls_ctr_drbg_seed( &xDrbg.xMbedDrbgCtx,
+-                                    mbedtls_entropy_func,
+-                                    &xDrbg.xMbedEntropyContext,
+-                                    NULL,
+-                                    0 ) )
+-    {
+-        CRYPTO_PRINT( ( "Failed to seed DRBG" ) );
+-    }
+-    else
+-    {
+-        xDrbg.xIsInitialized = CK_TRUE;
+-    }
+-}
+-
+-
+-
+-int mbedtls_hardware_poll( void * data,
+-                           unsigned char * output,
+-                           size_t len,
+-                           size_t * olen )
+-{
+-    int lStatus = MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+-    CK_RV xSession = CK_INVALID_HANDLE;
+-    CK_RV xResult = CKR_OK;
+-    CK_FUNCTION_LIST_PTR pxFunctionList = NULL;
+-    CK_BBOOL xSessionOpened = CK_FALSE;
+-
+-    xResult = C_GetFunctionList( &pxFunctionList );
+-
+-    if( xResult == CKR_OK )
+-    {
+-        xResult = xInitializePkcs11Session( &xSession );
+-    }
+-
+-    if( xResult == CKR_OK )
+-    {
+-        xSessionOpened = CK_TRUE;
+-        xResult = pxFunctionList->C_GenerateRandom( xSession, output, len );
+-    }
+-
+-    if( xSessionOpened == CK_TRUE )
+-    {
+-        xResult = pxFunctionList->C_CloseSession( xSession );
+-    }
+-
+-    if( xResult == CKR_OK )
+-    {
+-        lStatus = 0;
+-        *olen = len;
+-    }
+-
+-    return lStatus;
+-}
+-
+-
+-
+-int CRYPTO_GetRandomBytes( void * pvCtx,
+-                           uint8_t * pRandomBytes,
+-                           size_t length )
+-{
+-    ( void ) pvCtx; /*lint !e9087 !e9079 Allow casting void* to other types. */
+-
+-    int lResult = 0;
+-
+-    if( ( NULL == pRandomBytes ) ||
+-        ( length == 0 ) )
+-    {
+-        CRYPTO_PRINT( ( "ERROR: Invalid inputs to CRYPTO_GetRandomBytes \r\n" ) );
+-        lResult = CRYPTO_ERROR_RNG;
+-    }
+-
+-    if( xDrbg.xIsInitialized != CK_TRUE )
+-    {
+-        CRYPTO_PRINT( ( "ERROR: DRBG is not initialized \r\n" ) );
+-        lResult = CRYPTO_ERROR_RNG;
+-    }
+-
+-    if( lResult == 0 )
+-    {
+-        lResult = mbedtls_ctr_drbg_random( &xDrbg.xMbedDrbgCtx, pRandomBytes, length );
+-
+-        if( lResult != 0 )
+-        {
+-            CRYPTO_PRINT( ( "ERROR: DRBG failed %d \r\n", lResult ) );
+-            lResult = CRYPTO_ERROR_RNG;
+-        }
+-    }
+-
+-    return lResult;
+-}
+-
+-
+ /**
+  * @brief Creates signature verification context.
+  */
+diff --git a/libraries/freertos_plus/standard/tls/src/iot_tls.c b/libraries/freertos_plus/standard/tls/src/iot_tls.c
+index ff596b4b9..57ce1b7fc 100644
+--- a/libraries/freertos_plus/standard/tls/src/iot_tls.c
++++ b/libraries/freertos_plus/standard/tls/src/iot_tls.c
+@@ -175,6 +175,35 @@ static int prvNetworkRecv( void * pvContext,
+ 
+ /*-----------------------------------------------------------*/
+ 
++/**
++ * @brief Callback that wraps PKCS#11 for pseudo-random number generation.
++ *
++ * @param[in] pvCtx Caller context.
++ * @param[in] pucRandom Byte array to fill with random data.
++ * @param[in] xRandomLength Length of byte array.
++ *
++ * @return Zero on success.
++ */
++static int prvGenerateRandomBytes( void * pvCtx,
++                                   unsigned char * pucRandom,
++                                   size_t xRandomLength )
++{
++    TLSContext_t * pxCtx = ( TLSContext_t * ) pvCtx; /*lint !e9087 !e9079 Allow casting void* to other types. */
++    BaseType_t xResult;
++
++    xResult = pxCtx->pxP11FunctionList->C_GenerateRandom( pxCtx->xP11Session, pucRandom, xRandomLength );
++
++    if( xResult != CKR_OK )
++    {
++        TLS_PRINT( ( "ERROR: Failed to generate random bytes %d \r\n", xResult ) );
++        xResult = TLS_ERROR_RNG;
++    }
++
++    return xResult;
++}
++
++/*-----------------------------------------------------------*/
++
+ /**
+  * @brief Callback that enforces a worst-case expiration check on TLS server
+  * certificates.
+@@ -734,7 +763,7 @@ BaseType_t TLS_Connect( void * pvContext )
+         mbedtls_ssl_conf_authmode( &pxCtx->xMbedSslConfig, MBEDTLS_SSL_VERIFY_REQUIRED );
+ 
+         /* Set the RNG callback. */
+-        mbedtls_ssl_conf_rng( &pxCtx->xMbedSslConfig, &CRYPTO_GetRandomBytes, NULL ); /*lint !e546 Nothing wrong here. */
++        mbedtls_ssl_conf_rng( &pxCtx->xMbedSslConfig, &prvGenerateRandomBytes, pxCtx ); /*lint !e546 Nothing wrong here. */
+ 
+         /* Set issuer certificate. */
+         mbedtls_ssl_conf_ca_chain( &pxCtx->xMbedSslConfig, &pxCtx->xMbedX509CA, NULL );
+diff --git a/tools/cmake/afr.cmake b/tools/cmake/afr.cmake
+index 4dd0cf923..7d725bb4a 100644
+--- a/tools/cmake/afr.cmake
++++ b/tools/cmake/afr.cmake
+@@ -54,9 +54,18 @@ if(NOT DEFINED CACHE{AFR_TOOLCHAIN})
+     set(AFR_TOOLCHAIN ${__toolchain} CACHE INTERNAL "Toolchain to build Amazon FreeRTOS.")
+ endif()
+ 
++# Provide an option to enable demos. If we're not at top level, turn off demos build by default.
++if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
++    option(AFR_ENABLE_DEMOS "Build demos for Amazon FreeRTOS." ON)
++else()
++    option(AFR_ENABLE_DEMOS "Build demos for Amazon FreeRTOS." OFF)
++endif()
++
+ # Provide an option to enable tests. Also set an helper variable to use in generator expression.
+ option(AFR_ENABLE_TESTS "Build tests for Amazon FreeRTOS. Requires recompiling whole library." OFF)
+ if(AFR_ENABLE_TESTS)
++    # Turning off demo when tests are enabled.
++    set(AFR_ENABLE_DEMOS 0 CACHE BOOL "Build demos for Amazon FreeRTOS." FORCE)
+     add_compile_definitions(AMAZON_FREERTOS_ENABLE_UNIT_TESTS)
+     add_compile_definitions(IOT_BUILD_TESTS=1)
+     set(AFR_IS_TESTING 1 CACHE INTERNAL "")
+diff --git a/tools/cmake/afr_module.cmake b/tools/cmake/afr_module.cmake
+index 744598cc3..bdb1df1a7 100644
+--- a/tools/cmake/afr_module.cmake
++++ b/tools/cmake/afr_module.cmake
+@@ -332,7 +332,10 @@ function(afr_resolve_dependencies)
+         set(exe_target aws_demos)
+         set(exe_base demo_base)
+     endif()
+-    __search_afr_dependencies(${exe_target} dependencies)
++    # If neither demos nor tests are enabled, then don't search the aws_demos/aws_tests targets.
++    if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++        __search_afr_dependencies(${exe_target} dependencies)
++    endif()
+     afr_module_dependencies(${exe_base} INTERFACE ${dependencies})
+ 
+     # Make sure kernel can be enabled first.
+diff --git a/vendors/cypress/boards/CYW943907AEVAL1F/ports/pkcs11/hw_poll.c b/vendors/cypress/boards/CYW943907AEVAL1F/ports/pkcs11/hw_poll.c
+index 3f5cb5351..2e8604c5f 100644
+--- a/vendors/cypress/boards/CYW943907AEVAL1F/ports/pkcs11/hw_poll.c
++++ b/vendors/cypress/boards/CYW943907AEVAL1F/ports/pkcs11/hw_poll.c
+@@ -63,10 +63,10 @@ extern uint32_t ulSeed;
+ static uint32_t ulPrgnSeedDone = 0;
+ #endif
+ 
+-int lPortGetEntropyFromHardware( void * data,
+-                                  unsigned char * output,
+-                                  size_t len,
+-                                  size_t * olen )
++int mbedtls_hardware_poll( void * data,
++                           unsigned char * output,
++                           size_t len,
++                           size_t * olen )
+ {
+ 
+ #ifdef WLAN_FIRMWARE_PRNG_SEED
+diff --git a/vendors/cypress/boards/CYW954907AEVAL1F/ports/pkcs11/hw_poll.c b/vendors/cypress/boards/CYW954907AEVAL1F/ports/pkcs11/hw_poll.c
+index febdefae6..4e45b236f 100644
+--- a/vendors/cypress/boards/CYW954907AEVAL1F/ports/pkcs11/hw_poll.c
++++ b/vendors/cypress/boards/CYW954907AEVAL1F/ports/pkcs11/hw_poll.c
+@@ -63,10 +63,10 @@ extern uint32_t ulSeed;
+ static uint32_t ulPrgnSeedDone = 0;
+ #endif
+ 
+-int lPortGetEntropyFromHardware( void * data,
+-                                  unsigned char * output,
+-                                  size_t len,
+-                                  size_t * olen )
++int mbedtls_hardware_poll( void * data,
++                           unsigned char * output,
++                           size_t len,
++                           size_t * olen )
+ {
+ 
+ #ifdef WLAN_FIRMWARE_PRNG_SEED
+diff --git a/vendors/espressif/boards/esp32/CMakeLists.txt b/vendors/espressif/boards/esp32/CMakeLists.txt
+index 69245ad75..44c3bfa2a 100644
+--- a/vendors/espressif/boards/esp32/CMakeLists.txt
++++ b/vendors/espressif/boards/esp32/CMakeLists.txt
+@@ -192,33 +192,31 @@ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+ if(AFR_IS_TESTING)
+     set(exe_target aws_tests)
+-    set(extra_exe_sources "${AFR_TESTS_DIR}/common/iot_tests_network.c")
+ else()
+     set(exe_target aws_demos)
+-    set(
+-        extra_exe_sources
+-        "${AFR_DEMOS_DIR}/wifi_provisioning/aws_wifi_connect_task.c"
+-    )
+ endif()
+ 
+-add_executable(
+-    ${exe_target}
+-    "${board_dir}/application_code/main.c"
+-    ${extra_exe_sources}
+-)
+-target_include_directories(
+-    ${exe_target}
+-    PUBLIC
+-        $<TARGET_PROPERTY:AFR::kernel,INTERFACE_INCLUDE_DIRECTORIES>
+-        $<TARGET_PROPERTY:AFR::ble_hal::mcu_port,INTERFACE_INCLUDE_DIRECTORIES>
+-)
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-        AFR::ble
+-)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        "${board_dir}/application_code/main.c"
++        ${extra_exe_sources}
++    )
++    target_include_directories(
++        ${exe_target}
++        PUBLIC
++            $<TARGET_PROPERTY:AFR::kernel,INTERFACE_INCLUDE_DIRECTORIES>
++            $<TARGET_PROPERTY:AFR::ble_hal::mcu_port,INTERFACE_INCLUDE_DIRECTORIES>
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++            AFR::ble
++    )
++endif()
+ 
+ if(AFR_METADATA_MODE)
+     return()
+diff --git a/vendors/espressif/boards/esp32/aws_demos/application_code/espressif_code/mbedtls/port/esp_hardware.c b/vendors/espressif/boards/esp32/aws_demos/application_code/espressif_code/mbedtls/port/esp_hardware.c
+index ca1d801c7..915766249 100644
+--- a/vendors/espressif/boards/esp32/aws_demos/application_code/espressif_code/mbedtls/port/esp_hardware.c
++++ b/vendors/espressif/boards/esp32/aws_demos/application_code/espressif_code/mbedtls/port/esp_hardware.c
+@@ -11,7 +11,7 @@
+ #if defined(MBEDTLS_ENTROPY_HARDWARE_ALT)
+ 
+ extern int os_get_random(unsigned char *buf, size_t len);
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                            unsigned char *output, size_t len, size_t *olen )
+ {
+     os_get_random(output, len);
+diff --git a/vendors/espressif/boards/esp32/aws_tests/application_code/espressif_code/mbedtls/port/esp_hardware.c b/vendors/espressif/boards/esp32/aws_tests/application_code/espressif_code/mbedtls/port/esp_hardware.c
+index ca1d801c7..915766249 100644
+--- a/vendors/espressif/boards/esp32/aws_tests/application_code/espressif_code/mbedtls/port/esp_hardware.c
++++ b/vendors/espressif/boards/esp32/aws_tests/application_code/espressif_code/mbedtls/port/esp_hardware.c
+@@ -11,7 +11,7 @@
+ #if defined(MBEDTLS_ENTROPY_HARDWARE_ALT)
+ 
+ extern int os_get_random(unsigned char *buf, size_t len);
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                            unsigned char *output, size_t len, size_t *olen )
+ {
+     os_get_random(output, len);
+diff --git a/vendors/infineon/boards/xmc4800_iotkit/CMakeLists.txt b/vendors/infineon/boards/xmc4800_iotkit/CMakeLists.txt
+index 649704875..bca8180b1 100644
+--- a/vendors/infineon/boards/xmc4800_iotkit/CMakeLists.txt
++++ b/vendors/infineon/boards/xmc4800_iotkit/CMakeLists.txt
+@@ -254,43 +254,46 @@ afr_glob_src(board_src DIRECTORY "${xmc4800_aws_dir}/application_code/infineon_c
+ afr_glob_src(newlib DIRECTORY "${xmclib_dir}/Newlib")
+ afr_glob_src(config_src DIRECTORY "${xmc4800_aws_dir}/config_files")
+ 
+-add_executable(
+-    ${exe_target}
+-    ${board_src}
+-    ${config_src}
+-    ${newlib}
+-    ${esp_at_lib}
+-    ${linker_script}
+-    "${xmc4800_aws_dir}/application_code/main.c"
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-)
+-
+-if(AFR_METADATA_MODE)
+-    return()
+-endif()
+-
+-find_program(gcc_objectcopy arm-none-eabi-objcopy)
+-find_program(gcc_size arm-none-eabi-size)
+-
+-if(NOT gcc_objectcopy )
+-    message(FATAL_ERROR "Cannot find arm-none-eabi-objcopy.")
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_src}
++        ${config_src}
++        ${newlib}
++        ${esp_at_lib}
++        ${linker_script}
++        "${xmc4800_aws_dir}/application_code/main.c"
++    )
++
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++    )
++
++    if(AFR_METADATA_MODE)
++        return()
++    endif()
++
++    find_program(gcc_objectcopy arm-none-eabi-objcopy)
++    find_program(gcc_size arm-none-eabi-size)
++
++    if(NOT gcc_objectcopy )
++        message(FATAL_ERROR "Cannot find arm-none-eabi-objcopy.")
++    endif()
++
++    set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${gcc_objectcopy}" -O ihex "$<TARGET_FILE:${exe_target}>" "${output_file}"
++        COMMAND "${gcc_size}" "$<TARGET_FILE:${exe_target}>"
++    )
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${CMAKE_COMMAND}" -E copy "${output_file}" "${CMAKE_BINARY_DIR}"
++    )
+ endif()
+-
+-set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
+-
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${gcc_objectcopy}" -O ihex "$<TARGET_FILE:${exe_target}>" "${output_file}"
+-    COMMAND "${gcc_size}" "$<TARGET_FILE:${exe_target}>"
+-)
+-
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${CMAKE_COMMAND}" -E copy "${output_file}" "${CMAKE_BINARY_DIR}"
+-)
+diff --git a/vendors/infineon/boards/xmc4800_iotkit/aws_demos/application_code/infineon_code/entropy_hardware_alt.c b/vendors/infineon/boards/xmc4800_iotkit/aws_demos/application_code/infineon_code/entropy_hardware_alt.c
+index 58efa4bbd..a8c8a4097 100644
+--- a/vendors/infineon/boards/xmc4800_iotkit/aws_demos/application_code/infineon_code/entropy_hardware_alt.c
++++ b/vendors/infineon/boards/xmc4800_iotkit/aws_demos/application_code/infineon_code/entropy_hardware_alt.c
+@@ -19,7 +19,7 @@
+ #include "xmc_common.h"
+ #include "mbedtls/entropy_poll.h"
+ 
+-int lPortGetEntropyFromHardware(void *data, unsigned char *output, size_t len, size_t *olen)
++int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)
+ {
+   (void)data;
+ 
+diff --git a/vendors/infineon/boards/xmc4800_iotkit/aws_tests/application_code/infineon_code/entropy_hardware_alt.c b/vendors/infineon/boards/xmc4800_iotkit/aws_tests/application_code/infineon_code/entropy_hardware_alt.c
+index 58efa4bbd..a8c8a4097 100644
+--- a/vendors/infineon/boards/xmc4800_iotkit/aws_tests/application_code/infineon_code/entropy_hardware_alt.c
++++ b/vendors/infineon/boards/xmc4800_iotkit/aws_tests/application_code/infineon_code/entropy_hardware_alt.c
+@@ -19,7 +19,7 @@
+ #include "xmc_common.h"
+ #include "mbedtls/entropy_poll.h"
+ 
+-int lPortGetEntropyFromHardware(void *data, unsigned char *output, size_t len, size_t *olen)
++int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)
+ {
+   (void)data;
+ 
+diff --git a/vendors/infineon/secure_elements/optiga_trust_x/examples/mbedtls_port/trustx_random.c b/vendors/infineon/secure_elements/optiga_trust_x/examples/mbedtls_port/trustx_random.c
+index 01899b7d3..31def8112 100644
+--- a/vendors/infineon/secure_elements/optiga_trust_x/examples/mbedtls_port/trustx_random.c
++++ b/vendors/infineon/secure_elements/optiga_trust_x/examples/mbedtls_port/trustx_random.c
+@@ -39,7 +39,7 @@
+ 
+ #if defined(MBEDTLS_ENTROPY_HARDWARE_ALT)
+ 
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                            unsigned char *output, size_t len, size_t *olen )
+ {
+     optiga_lib_status_t status;
+diff --git a/vendors/marvell/boards/mw300_rd/CMakeLists.txt b/vendors/marvell/boards/mw300_rd/CMakeLists.txt
+index 920a9d87f..c2fc1f0cc 100644
+--- a/vendors/marvell/boards/mw300_rd/CMakeLists.txt
++++ b/vendors/marvell/boards/mw300_rd/CMakeLists.txt
+@@ -257,45 +257,48 @@ set(default_modules AFR::wifi AFR::utils)
+ afr_glob_src(board_code_src RECURSE DIRECTORY "${board_dir}/application_code/marvell_code")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    ${config_files}
+-    "${board_dir}/application_code/main.c"
+-)
+-
+-target_include_directories(
+-    ${exe_target}
+-    PUBLIC
+-       "${AFR_MODULES_ABSTRACTIONS_DIR}/pkcs11/include"
+-       "${AFR_3RDPARTY_DIR}/pkcs11"
+-       "${AFR_MODULES_FREERTOS_PLUS_DIR}/standard/crypto/include"
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::utils
+-        ${default_modules}
+-        -T${global-linkerscript-y}
+-)
+-
+-if(AFR_METADATA_MODE)
+-    return()
+-endif()
+-
+-# Convert afx file to bin file
+-if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
+-    set(axf2fw "${mw320_dir}/sdk/tools/bin/Linux/axf2firmware")
+-    execute_process(COMMAND chmod +x "${axf2fw}")  # TODO, workaround for Amazon FreeRTOS console permission issue.
+-else()
+-    message(FATAL_ERROR "Only Linux host is supported for marvell.")
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_code_src}
++        ${config_files}
++        "${board_dir}/application_code/main.c"
++    )
++
++    target_include_directories(
++        ${exe_target}
++        PUBLIC
++        "${AFR_MODULES_ABSTRACTIONS_DIR}/pkcs11/include"
++        "${AFR_3RDPARTY_DIR}/pkcs11"
++        "${AFR_MODULES_FREERTOS_PLUS_DIR}/standard/crypto/include"
++    )
++
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::utils
++            ${default_modules}
++            -T${global-linkerscript-y}
++    )
++
++    if(AFR_METADATA_MODE)
++        return()
++    endif()
++
++    # Convert afx file to bin file
++    if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
++        set(axf2fw "${mw320_dir}/sdk/tools/bin/Linux/axf2firmware")
++        execute_process(COMMAND chmod +x "${axf2fw}")  # TODO, workaround for Amazon FreeRTOS console permission issue.
++    else()
++        message(FATAL_ERROR "Only Linux host is supported for marvell.")
++    endif()
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
++        COMMAND "${axf2fw}" "${exe_target}.axf" "${exe_target}.bin"
++    )
++
++    set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES "${exe_target}.bin" "${exe_target}.map")
+ endif()
+-
+-add_custom_command(
+-     TARGET ${exe_target} POST_BUILD
+-     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
+-     COMMAND "${axf2fw}" "${exe_target}.axf" "${exe_target}.bin"
+-)
+-
+-set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES "${exe_target}.bin" "${exe_target}.map")
+diff --git a/vendors/marvell/boards/mw300_rd/ports/pkcs11/iot_pkcs11_pal.c b/vendors/marvell/boards/mw300_rd/ports/pkcs11/iot_pkcs11_pal.c
+index 17e81092a..bd468a49f 100644
+--- a/vendors/marvell/boards/mw300_rd/ports/pkcs11/iot_pkcs11_pal.c
++++ b/vendors/marvell/boards/mw300_rd/ports/pkcs11/iot_pkcs11_pal.c
+@@ -322,7 +322,7 @@ void PKCS11_PAL_GetObjectValueCleanup( uint8_t * pucData,
+ /*-----------------------------------------------------------*/
+ 
+ 
+-int lPortGetEntropyFromHardware( void * data,
++int mbedtls_hardware_poll( void * data,
+                            unsigned char * output,
+                            size_t len,
+                            size_t * olen )
+diff --git a/vendors/mediatek/boards/mt7697hx-dev-kit/CMakeLists.txt b/vendors/mediatek/boards/mt7697hx-dev-kit/CMakeLists.txt
+index 0fb0c8137..0b50e0501 100644
+--- a/vendors/mediatek/boards/mt7697hx-dev-kit/CMakeLists.txt
++++ b/vendors/mediatek/boards/mt7697hx-dev-kit/CMakeLists.txt
+@@ -320,51 +320,51 @@ target_link_libraries(
+ # -------------------------------------------------------------------------------------------------
+ set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+ 
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+ afr_glob_src(board_code_src DIRECTORY "${board_dir}/application_code/mediatek_code")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    ${config_files}
+-    $<IF:${AFR_IS_TESTING}, ,${network_manager_src}>
+-    "${board_dir}/startup_mt7687.s"
+-    "${board_dir}/application_code/main.c"
+-    "${board_dir}/application_code/mediatek_code/source/sys_init.c"
+-    "${board_dir}/application_code/mediatek_code/source/system_mt7687.c"
+-    "${board_dir}/application_code/mediatek_code/source/ept_gpio_var.c"
+-    "${board_dir}/application_code/mediatek_code/source/ept_eint_var.c"
+-
+-    "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/exception_handler.c"
+-    "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/toi.c"
+-    "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/os_trace_callback.c"
+-    "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/os_port_callback.c"
+-    "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/memory_regions.c"
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::utils
+-        "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libwifi_CM4_Keil.lib"
+-        "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libhal_core_CM4_Keil.lib"
+-        "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libhal_protected_CM4_Keil.lib"
+-        "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libkservice_CM4_MT7687_Keil.lib"
+-        "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libminicli_CM4_Keil.lib"
+-        "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libminisupp_CM4_Keil.lib"
+-        ${link_extra_flags}
+-        AFR::wifi
+-)
+-
+-find_program(fromelf fromelf.exe PATHS "${AFR_COMPILER_DIR}")
+-set(output_bin_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.bin")
+-set(output_axf_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.axf")
+-
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
+-    COMMAND "echo" "Creating .bin file"
+-    COMMAND "${fromelf}" --bin -o ${output_bin_file} ${output_axf_file}
+-)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_code_src}
++        ${config_files}
++        "${board_dir}/startup_mt7687.s"
++        "${board_dir}/application_code/main.c"
++        "${board_dir}/application_code/mediatek_code/source/sys_init.c"
++        "${board_dir}/application_code/mediatek_code/source/system_mt7687.c"
++        "${board_dir}/application_code/mediatek_code/source/ept_gpio_var.c"
++        "${board_dir}/application_code/mediatek_code/source/ept_eint_var.c"
++
++        "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/exception_handler.c"
++        "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/toi.c"
++        "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/os_trace_callback.c"
++        "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/os_port_callback.c"
++        "${AFR_VENDORS_DIR}/mediatek/sdk/kernel/service/src/memory_regions.c"
++    )
++
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::utils
++            "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libwifi_CM4_Keil.lib"
++            "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libhal_core_CM4_Keil.lib"
++            "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libhal_protected_CM4_Keil.lib"
++            "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libkservice_CM4_MT7687_Keil.lib"
++            "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libminicli_CM4_Keil.lib"
++            "${AFR_VENDORS_DIR}/mediatek/sdk/prebuilt/keil/libminisupp_CM4_Keil.lib"
++            ${link_extra_flags}
++            AFR::wifi
++    )
++
++    find_program(fromelf fromelf.exe PATHS "${AFR_COMPILER_DIR}")
++    set(output_bin_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.bin")
++    set(output_axf_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.axf")
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
++        COMMAND "echo" "Creating .bin file"
++        COMMAND "${fromelf}" --bin -o ${output_bin_file} ${output_axf_file}
++    )
++endif()
+diff --git a/vendors/mediatek/boards/mt7697hx-dev-kit/ports/pkcs11/iot_pkcs11_pal.c b/vendors/mediatek/boards/mt7697hx-dev-kit/ports/pkcs11/iot_pkcs11_pal.c
+index 7d541b262..2fbcc0869 100644
+--- a/vendors/mediatek/boards/mt7697hx-dev-kit/ports/pkcs11/iot_pkcs11_pal.c
++++ b/vendors/mediatek/boards/mt7697hx-dev-kit/ports/pkcs11/iot_pkcs11_pal.c
+@@ -346,7 +346,7 @@ void PKCS11_PAL_GetObjectValueCleanup( uint8_t * pucData,
+ #include <string.h>
+ #include <hal_trng.h>
+ 
+-int lPortGetEntropyFromHardware( void * data,
++int mbedtls_hardware_poll( void * data,
+                            unsigned char * output,
+                            size_t len,
+                            size_t * olen )
+diff --git a/vendors/microchip/boards/curiosity_pic32mzef/CMakeLists.txt b/vendors/microchip/boards/curiosity_pic32mzef/CMakeLists.txt
+index 64644529d..60294c922 100644
+--- a/vendors/microchip/boards/curiosity_pic32mzef/CMakeLists.txt
++++ b/vendors/microchip/boards/curiosity_pic32mzef/CMakeLists.txt
+@@ -254,58 +254,9 @@ target_link_libraries(
+     INTERFACE AFR::pkcs11
+ )
+ 
+-# -------------------------------------------------------------------------------------------------
+-# Amazon FreeRTOS demos and tests
+-# -------------------------------------------------------------------------------------------------
+-
+-if(AFR_IS_TESTING)
+-    set(exe_target aws_tests)
+-    set(extra_exe_sources "${AFR_TESTS_DIR}/common/iot_tests_network.c")
+-else()
+-    set(exe_target aws_demos)
+-    set(
+-        extra_exe_sources
+-        ${NETWORK_MANAGER_SOURCES}
+-    )
+-endif()
+-
+-afr_glob_src(microchip_code RECURSE DIRECTORY "${board_dir}/application_code/microchip_code")
+-afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+-add_executable(
+-    ${exe_target}
+-    ${config_files}
+-    "${board_dir}/application_code/main.c"
+-    ${microchip_code}
+-    ${extra_exe_sources}
+-    "${board_dir}/application_code/microchip_code/app_mz.ld"
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-        "${harmony_dir}/bin/framework/peripheral/PIC32MZ2048EFM100_peripherals.a"
+-)
+-
+-target_include_directories(
+-    ${exe_target}
+-    PUBLIC
+-        "${harmony_dir}/framework/system/common"
+-)
+-
+-
+-if(AFR_METADATA_MODE)
+-    return()
+-endif()
+-
+-
+ # -------------------------------------------------------------------------------------------------
+ # Additional build configurations
+ # -------------------------------------------------------------------------------------------------
+-set(CMAKE_EXECUTABLE_SUFFIX ".elf")
+-
+-
+ set_source_files_properties(${AFR_MODULES_C_SDK_DIR}/aws/greengrass/aws_greengrass_discovery.c
+     ${AFR_DEMOS_DIR}/tcp/aws_tcp_echo_client_single_task.c
+     ${AFR_DEMOS_DIR}/secure_sockets/iot_test_tcp.c
+@@ -336,39 +287,83 @@ set_source_files_properties(${AFR_DEMOS_DIR}/posix/iot_test_posix_pthread.c
+ 
+ set(CMAKE_STATIC_LIBRARY_PREFIX "lib")
+ 
++# -------------------------------------------------------------------------------------------------
++# Amazon FreeRTOS demos and tests
++# -------------------------------------------------------------------------------------------------
++set(CMAKE_EXECUTABLE_SUFFIX ".elf")
+ 
+-find_program(xc32_bin2hex xc32-bin2hex PATHS "${AFR_COMPILER_DIR}")
+-find_program(xc32_objcopy xc32-objcopy PATHS "${AFR_COMPILER_DIR}")
++afr_glob_src(microchip_code RECURSE DIRECTORY "${board_dir}/application_code/microchip_code")
++afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-# Locate microchip hexmate.
+-set(MCHP_HEXMATE_PATH "" CACHE STRING "Path to microchip hexmate, usually this should be mplab's path")
+-find_program(hexmate_path hexmate PATHS "${MCHP_HEXMATE_PATH}" PATH_SUFFIXES bin)
+-if (NOT AFR_METADATA_MODE)
+-    if(NOT hexmate_path)
+-        message(FATAL_ERROR "Cannot find Microchip's hexmate tool. Set MCHP_HEXMATE_PATH to the hexmate tool that comes with MPLAB. Try MPLABX\{VERSION}\mplab_platform\bin or /Applications/microchip/mplabx/{VERSION}/mplab_ide.app/Contents/Resources/mplab_ide/bin.")
+-    endif()
++if(AFR_IS_TESTING)
++    set(exe_target aws_tests)
++    set(extra_exe_sources "${AFR_TESTS_DIR}/common/iot_tests_network.c")
++else()
++    set(exe_target aws_demos)
+ endif()
+ 
+-# These locations have to be generalized through the toolchain
+-# We may have to re-build the bootloader hex file?
+-set(bl_hex_file ${CMAKE_CURRENT_LIST_DIR}/bootloader/aws_bootloader.X.production.hex)
+-
+-set(output_hex_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
+-set(output_bin_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.production.bin")
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "echo" "Running Post-build step"
+-    COMMAND "${xc32_bin2hex}" "$<TARGET_FILE:${exe_target}>"
+-    COMMAND "echo" "Running Hexmate to combine bootloader with image"
+-    COMMAND "${hexmate_path}" ${output_hex_file}  ${bl_hex_file} -O${exe_target}.production.unified.hex
+-)
+-if(NOT AFR_IS_TESTING)
+-    set(ota_image_generator "${CMAKE_CURRENT_LIST_DIR}/bootloader/bootloader/utility/ota_image_generator.py")
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${config_files}
++        "${board_dir}/application_code/main.c"
++        ${microchip_code}
++        ${extra_exe_sources}
++        "${board_dir}/application_code/microchip_code/app_mz.ld"
++    )
++
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++            "${harmony_dir}/bin/framework/peripheral/PIC32MZ2048EFM100_peripherals.a"
++    )
++
++    target_include_directories(
++        ${exe_target}
++        PUBLIC
++            "${harmony_dir}/framework/system/common"
++    )
++
++    if(AFR_METADATA_MODE)
++        return()
++    endif()
++
++    find_program(xc32_bin2hex xc32-bin2hex PATHS "${AFR_COMPILER_DIR}")
++    find_program(xc32_objcopy xc32-objcopy PATHS "${AFR_COMPILER_DIR}")
++
++    # Locate microchip hexmate.
++    set(MCHP_HEXMATE_PATH "" CACHE STRING "Path to microchip hexmate, usually this should be mplab's path")
++    find_program(hexmate_path hexmate PATHS "${MCHP_HEXMATE_PATH}" PATH_SUFFIXES bin)
++    if (NOT AFR_METADATA_MODE)
++        if(NOT hexmate_path)
++            message(FATAL_ERROR "Cannot find Microchip's hexmate tool. Set MCHP_HEXMATE_PATH to the hexmate tool that comes with MPLAB. Try MPLABX\{VERSION}\mplab_platform\bin or /Applications/microchip/mplabx/{VERSION}/mplab_ide.app/Contents/Resources/mplab_ide/bin.")
++        endif()
++    endif()
++
++    # These locations have to be generalized through the toolchain
++    # We may have to re-build the bootloader hex file?
++    set(bl_hex_file ${CMAKE_CURRENT_LIST_DIR}/bootloader/aws_bootloader.X.production.hex)
++
++    set(output_hex_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
++    set(output_bin_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.production.bin")
+     add_custom_command(
+         TARGET ${exe_target} POST_BUILD
+-        COMMAND "echo" "Running xc32-objcopy"
+-        COMMAND "${xc32_objcopy}" -I ihex ${output_hex_file} -O binary "${output_bin_file}"
+-        COMMAND "echo" "Creating binary image"
+-        COMMAND "python" "${ota_image_generator}" -b "${output_bin_file}" -p MCHP-Curiosity-PIC32MZEF
++        COMMAND "echo" "Running Post-build step"
++        COMMAND "${xc32_bin2hex}" "$<TARGET_FILE:${exe_target}>"
++        COMMAND "echo" "Running Hexmate to combine bootloader with image"
++        COMMAND "${hexmate_path}" ${output_hex_file}  ${bl_hex_file} -O${exe_target}.production.unified.hex
+     )
++    if(NOT AFR_IS_TESTING)
++        set(ota_image_generator "${CMAKE_CURRENT_LIST_DIR}/bootloader/bootloader/utility/ota_image_generator.py")
++        add_custom_command(
++            TARGET ${exe_target} POST_BUILD
++            COMMAND "echo" "Running xc32-objcopy"
++            COMMAND "${xc32_objcopy}" -I ihex ${output_hex_file} -O binary "${output_bin_file}"
++            COMMAND "echo" "Creating binary image"
++            COMMAND "python" "${ota_image_generator}" -b "${output_bin_file}" -p MCHP-Curiosity-PIC32MZEF
++        )
++    endif()
+ endif()
+diff --git a/vendors/microchip/boards/curiosity_pic32mzef/ports/pkcs11/iot_pkcs11_pal.c b/vendors/microchip/boards/curiosity_pic32mzef/ports/pkcs11/iot_pkcs11_pal.c
+index f60042080..60d55fcdd 100644
+--- a/vendors/microchip/boards/curiosity_pic32mzef/ports/pkcs11/iot_pkcs11_pal.c
++++ b/vendors/microchip/boards/curiosity_pic32mzef/ports/pkcs11/iot_pkcs11_pal.c
+@@ -98,7 +98,7 @@ typedef struct
+  */
+ static P11KeyConfig_t P11ConfigSave;
+ 
+-int lPortGetEntropyFromHardware( void * data,
++int mbedtls_hardware_poll( void * data,
+                            unsigned char * output,
+                            size_t len,
+                            size_t * olen );
+@@ -373,7 +373,7 @@ void PKCS11_PAL_GetObjectValueCleanup( uint8_t * pucData,
+ 
+ /*-----------------------------------------------------------*/
+ 
+-int lPortGetEntropyFromHardware( void * data,
++int mbedtls_hardware_poll( void * data,
+                            unsigned char * output,
+                            size_t len,
+                            size_t * olen )
+diff --git a/vendors/nordic/boards/nrf52840-dk/CMakeLists.txt b/vendors/nordic/boards/nrf52840-dk/CMakeLists.txt
+index 27845e4b7..0e50d6572 100644
+--- a/vendors/nordic/boards/nrf52840-dk/CMakeLists.txt
++++ b/vendors/nordic/boards/nrf52840-dk/CMakeLists.txt
+@@ -470,60 +470,59 @@ target_link_libraries(
+ # -------------------------------------------------------------------------------------------------
+ # Amazon FreeRTOS demos and tests
+ # -------------------------------------------------------------------------------------------------
+-set( application_src
+-    "${board_dir}/application_code/main.c"
+-    "${board_dir}/application_code/nordic_code/SEGGER_HardFaultHandler.c"
+-    "${board_dir}/application_code/nordic_code/SEGGER_RTT.c"
+-    "${board_dir}/application_code/nordic_code/SEGGER_RTT_Syscalls_SES.c"
+-    "${board_dir}/application_code/nordic_code/thumb_crt0.s"
+-)
+-add_executable(
+-    ${exe_target}
+-    ${application_src}
+-)
++set(CMAKE_EXECUTABLE_SUFFIX ".hex")
+ 
+-if(AFR_METADATA_MODE)
+-    return()
++if(AFR_IS_TESTING)
++    set(exe_target aws_tests)
+ else()
+-	#message(FATAL_ERROR "CMake support for Nordic is not complete yet.")
++    set(exe_target aws_demos)
+ endif()
+ 
+-
+-# -------------------------------------------------------------------------------------------------
+-# Additional build configurations
+-# -------------------------------------------------------------------------------------------------
+-
+-set(
+-    mkld_flags
+-    -memory-map-segments "FLASH RX 0x0 0x100000$<SEMICOLON>RAM RWX 0x20000000 0x40000"
+-    -section-placement-file "${nrf52840_dir}/flash_placement.xml"
+-    -check-segment-overflow
+-    -symbols "__STACKSIZE__=8192$<SEMICOLON>__STACKSIZE_PROCESS__=0$<SEMICOLON>__HEAPSIZE__=8192"
+-    -section-placement-macros
+-    "FLASH_PH_START=0x0$<SEMICOLON>FLASH_PH_SIZE=0x100000$<SEMICOLON>RAM_PH_START=0x20000000$<SEMICOLON>RAM_PH_SIZE=0x40000$<SEMICOLON>FLASH_START=0x27000$<SEMICOLON>FLASH_SIZE=0xda000$<SEMICOLON>RAM_START=0x200046F8$<SEMICOLON>RAM_SIZE=0x3B908"
+-)
+-
+-add_custom_command(
+-    TARGET ${exe_target} PRE_LINK
+-    COMMAND VERBATIM "${AFR_COMPILER_DIR}/../../../bin/mkld" ${mkld_flags} "${CMAKE_BINARY_DIR}/${exe_target}.ld"
+-)
+-
+-find_program(gcc_objectcopy arm-none-eabi-objcopy)
+-find_program(gcc_size arm-none-eabi-size)
+-
+-if(NOT gcc_objectcopy )
+-    message(FATAL_ERROR "Cannot find arm-none-eabi-objcopy.")
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    set( application_src
++        "${board_dir}/application_code/main.c"
++        "${board_dir}/application_code/nordic_code/SEGGER_HardFaultHandler.c"
++        "${board_dir}/application_code/nordic_code/SEGGER_RTT.c"
++        "${board_dir}/application_code/nordic_code/SEGGER_RTT_Syscalls_SES.c"
++        "${board_dir}/application_code/nordic_code/thumb_crt0.s"
++    )
++    add_executable(
++        ${exe_target}
++        ${application_src}
++    )
++
++    set(
++        mkld_flags
++        -memory-map-segments "FLASH RX 0x0 0x100000$<SEMICOLON>RAM RWX 0x20000000 0x40000"
++        -section-placement-file "${nrf52840_dir}/flash_placement.xml"
++        -check-segment-overflow
++        -symbols "__STACKSIZE__=8192$<SEMICOLON>__STACKSIZE_PROCESS__=0$<SEMICOLON>__HEAPSIZE__=8192"
++        -section-placement-macros
++        "FLASH_PH_START=0x0$<SEMICOLON>FLASH_PH_SIZE=0x100000$<SEMICOLON>RAM_PH_START=0x20000000$<SEMICOLON>RAM_PH_SIZE=0x40000$<SEMICOLON>FLASH_START=0x27000$<SEMICOLON>FLASH_SIZE=0xda000$<SEMICOLON>RAM_START=0x200046F8$<SEMICOLON>RAM_SIZE=0x3B908"
++    )
++    add_custom_command(
++        TARGET ${exe_target} PRE_LINK
++        COMMAND VERBATIM "${AFR_COMPILER_DIR}/../../../bin/mkld" ${mkld_flags} "${CMAKE_BINARY_DIR}/${exe_target}.ld"
++    )
++
++    find_program(gcc_objectcopy arm-none-eabi-objcopy)
++    find_program(gcc_size arm-none-eabi-size)
++
++    if(NOT gcc_objectcopy )
++        message(FATAL_ERROR "Cannot find arm-none-eabi-objcopy.")
++    endif()
++
++    set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${gcc_objectcopy}" -O ihex "$<TARGET_FILE:${exe_target}>" "${output_file}"
++        COMMAND "${gcc_size}" "$<TARGET_FILE:${exe_target}>"
++    )
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${CMAKE_COMMAND}" -E copy "${output_file}" "${CMAKE_BINARY_DIR}"
++    )
+ endif()
+-
+-set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
+-
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${gcc_objectcopy}" -O ihex "$<TARGET_FILE:${exe_target}>" "${output_file}"
+-    COMMAND "${gcc_size}" "$<TARGET_FILE:${exe_target}>"
+-)
+-
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${CMAKE_COMMAND}" -E copy "${output_file}" "${CMAKE_BINARY_DIR}"
+-)
+diff --git a/vendors/nuvoton/boards/numaker_iot_m487_wifi/CMakeLists.txt b/vendors/nuvoton/boards/numaker_iot_m487_wifi/CMakeLists.txt
+index 35d9298b7..e21be27fa 100644
+--- a/vendors/nuvoton/boards/numaker_iot_m487_wifi/CMakeLists.txt
++++ b/vendors/nuvoton/boards/numaker_iot_m487_wifi/CMakeLists.txt
+@@ -42,18 +42,18 @@ target_compile_definitions(
+     AFR::compiler::mcu_port
+     INTERFACE $<$<COMPILE_LANGUAGE:C>:${compiler_defined_symbols}>
+     -D__MICROLIB
+-    -D_REENT_SMALL 
+-    -DPRODUCT_VERSION=m487 
+-    -DCONFIG_REPEATER 
+-    -DSUPPORT_MBEDTLS 
+-    -DHAL_DFS_MODULE_ENABLED 
+-    -DLWIP_NO_STDINT_H=1 
++    -D_REENT_SMALL
++    -DPRODUCT_VERSION=m487
++    -DCONFIG_REPEATER
++    -DSUPPORT_MBEDTLS
++    -DHAL_DFS_MODULE_ENABLED
++    -DLWIP_NO_STDINT_H=1
+     -DLWIP_TIMEVAL_PRIVATE=1
+     -D__little_endian__=1
+     -DNDEBUG
+-    -DUNITY_INCLUDE_CONFIG_H 
+-    -DRVDS_ARMCM4_NUC4xx 
+-    -D__LITTLE_ENDIAN__ 
++    -DUNITY_INCLUDE_CONFIG_H
++    -DRVDS_ARMCM4_NUC4xx
++    -D__LITTLE_ENDIAN__
+     -DM487
+ )
+ target_compile_definitions(
+@@ -99,7 +99,7 @@ afr_mcu_port(kernel)
+ target_sources(
+     AFR::kernel::mcu_port
+     INTERFACE
+-        # Nuvoton SDK sources (driver)		
++        # Nuvoton SDK sources (driver)
+         "${AFR_VENDORS_DIR}/nuvoton/sdk/StdDriver/src/clk.c"
+         "${AFR_VENDORS_DIR}/nuvoton/sdk/StdDriver/src/crypto.c"
+         "${AFR_VENDORS_DIR}/nuvoton/sdk/StdDriver/src/fmc.c"
+@@ -130,7 +130,7 @@ target_include_directories(
+ afr_mcu_port(wifi)
+ target_sources(
+     AFR::wifi::mcu_port
+-    INTERFACE 
++    INTERFACE
+         "${afr_ports_dir}/wifi/iot_wifi.c"
+         "${AFR_VENDORS_DIR}/nuvoton/sdk/middleware/wifi_esp8266/esp8266_wifi.c"
+ )
+@@ -138,7 +138,7 @@ target_sources(
+ target_include_directories(
+     AFR::wifi::mcu_port
+     INTERFACE
+-        "${AFR_VENDORS_DIR}/nuvoton/sdk/middleware/wifi_esp8266"        
++        "${AFR_VENDORS_DIR}/nuvoton/sdk/middleware/wifi_esp8266"
+ )
+ 
+ # PKCS11
+@@ -154,7 +154,7 @@ afr_mcu_port(secure_sockets)
+ 
+ target_sources(
+     AFR::secure_sockets::mcu_port
+-    INTERFACE 
++    INTERFACE
+         "${afr_ports_dir}/secure_sockets/iot_secure_sockets.c"
+ )
+ 
+@@ -171,37 +171,34 @@ target_link_libraries(
+ # -------------------------------------------------------------------------------------------------
+ set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+ 
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    ${config_files}
+-    "${board_dir}/application_code/main.c"
+-	"${AFR_VENDORS_DIR}/nuvoton/sdk/Device/Nuvoton/numaker_iot_m487_wifi/Source/ARM/startup_M480.s"
+-    "${AFR_VENDORS_DIR}/nuvoton/sdk/Device/Nuvoton/numaker_iot_m487_wifi/Source/system_M480.c"
+-    $<IF:${AFR_IS_TESTING}, ,${network_manager_src}>
+-	
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-)
+-
+-if(NOT AFR_METADATA_MODE)
+-    # Convert afx file to bin file
+-    afr_find_compiler(ARM_KEIL_FROMELF fromelf.exe)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_code_src}
++        ${config_files}
++        "${board_dir}/application_code/main.c"
++        "${AFR_VENDORS_DIR}/nuvoton/sdk/Device/Nuvoton/numaker_iot_m487_wifi/Source/ARM/startup_M480.s"
++        "${AFR_VENDORS_DIR}/nuvoton/sdk/Device/Nuvoton/numaker_iot_m487_wifi/Source/system_M480.c"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++    )
++
++    if(NOT AFR_METADATA_MODE)
++        # Convert afx file to bin file
++        find_program(ARM_KEIL_FROMELF fromelf.exe PATHS "${AFR_COMPILER_DIR}")
++    endif()
++
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
++        COMMAND "${ARM_KEIL_FROMELF}" --bin "${exe_target}.axf" --output "${exe_target}.bin"
++        COMMAND "${ARM_KEIL_FROMELF}" --text -c "${exe_target}.axf" --output "${exe_target}.txt"
++    )
+ endif()
+-
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
+-	COMMAND "${ARM_KEIL_FROMELF}" --bin "${exe_target}.axf" --output "${exe_target}.bin"
+-	COMMAND "${ARM_KEIL_FROMELF}" --text -c "${exe_target}.axf" --output "${exe_target}.txt"
+-)
+-
+diff --git a/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_demos/application_code/nuvoton_code/entropy_hardware_poll.c b/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_demos/application_code/nuvoton_code/entropy_hardware_poll.c
+index f1c59e38f..6b23d01e2 100644
+--- a/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_demos/application_code/nuvoton_code/entropy_hardware_poll.c
++++ b/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_demos/application_code/nuvoton_code/entropy_hardware_poll.c
+@@ -216,7 +216,7 @@ static BaseType_t trng_init()
+  * Get len bytes of entropy from the hardware RNG.
+  */
+ 
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                     unsigned char *output, size_t len, size_t *olen )
+ {
+     /* Enabling ADC and sampling the internal voltage to come out one random seed,
+diff --git a/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_tests/application_code/nuvoton_code/entropy_hardware_poll.c b/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_tests/application_code/nuvoton_code/entropy_hardware_poll.c
+index f1c59e38f..6b23d01e2 100644
+--- a/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_tests/application_code/nuvoton_code/entropy_hardware_poll.c
++++ b/vendors/nuvoton/boards/numaker_iot_m487_wifi/aws_tests/application_code/nuvoton_code/entropy_hardware_poll.c
+@@ -216,7 +216,7 @@ static BaseType_t trng_init()
+  * Get len bytes of entropy from the hardware RNG.
+  */
+ 
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                     unsigned char *output, size_t len, size_t *olen )
+ {
+     /* Enabling ADC and sampling the internal voltage to come out one random seed,
+diff --git a/vendors/nxp/boards/lpc54018iotmodule/CMakeLists.txt b/vendors/nxp/boards/lpc54018iotmodule/CMakeLists.txt
+index c1bef292b..0bde3b9f8 100644
+--- a/vendors/nxp/boards/lpc54018iotmodule/CMakeLists.txt
++++ b/vendors/nxp/boards/lpc54018iotmodule/CMakeLists.txt
+@@ -281,24 +281,22 @@ endif()
+ afr_glob_src(board_code_src DIRECTORY "${lpc54018_aws_dir}/application_code/nxp_code")
+ afr_glob_src(config_files_src DIRECTORY "${lpc54018_aws_dir}/config_files")
+ 
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+-
+-add_executable(${exe_target}
+-    ${board_code_src}
+-    ${config_files_src}
+-    "${lpc54018_aws_dir}/application_code/main.c"
+-    # TODO, It is unknown why hw_poll.c has to be included here
+-    "${lpc54018_ports_dir}/pkcs11/hw_poll.c"
+-    $<$<NOT:${AFR_IS_TESTING}>:${network_manager_src}>
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(${exe_target}
++        ${board_code_src}
++        ${config_files_src}
++        "${lpc54018_aws_dir}/application_code/main.c"
++        # TODO, It is unknown why hw_poll.c has to be included here
++        "${lpc54018_ports_dir}/pkcs11/hw_poll.c"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++    )
++endif()
+ 
+ if(NOT AFR_METADATA_MODE)
+     message(FATAL_ERROR "CMake support for nxp is not complete yet.")
+diff --git a/vendors/nxp/boards/lpc54018iotmodule/ports/pkcs11/hw_poll.c b/vendors/nxp/boards/lpc54018iotmodule/ports/pkcs11/hw_poll.c
+index e139c4d34..ed29717b1 100644
+--- a/vendors/nxp/boards/lpc54018iotmodule/ports/pkcs11/hw_poll.c
++++ b/vendors/nxp/boards/lpc54018iotmodule/ports/pkcs11/hw_poll.c
+@@ -47,7 +47,7 @@
+ #endif
+ 
+ 
+-int lPortGetEntropyFromHardware(void *data, unsigned char *output, size_t len, size_t *olen)
++int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)
+ {
+     status_t result = kStatus_Success;
+ 
+diff --git a/vendors/pc/boards/windows/CMakeLists.txt b/vendors/pc/boards/windows/CMakeLists.txt
+index bbebcc509..32483e67e 100644
+--- a/vendors/pc/boards/windows/CMakeLists.txt
++++ b/vendors/pc/boards/windows/CMakeLists.txt
+@@ -134,8 +134,6 @@ target_link_libraries(
+ # -------------------------------------------------------------------------------------------------
+ # Amazon FreeRTOS demos and tests
+ # -------------------------------------------------------------------------------------------------
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+ # Build an OTA test that only builds on Windows.
+@@ -149,27 +147,28 @@ if(AFR_IS_TESTING)
+     set(exe_target aws_tests)
+ else()
+     set(exe_target aws_demos)
+-    set(extra_src ${network_manager_src})
+ endif()
+ 
+-add_executable(
+-    ${exe_target}
+-    "${board_dir}/application_code/main.c"
+-    "${board_demos_dir}/application_code/aws_demo_logging.c"
+-    "${board_demos_dir}/application_code/aws_demo_logging.h"
+-    "${board_demos_dir}/application_code/aws_entropy_hardware_poll.c"
+-    "${board_demos_dir}/application_code/aws_run-time-stats-utils.c"
+-    ${extra_src}
+-)
+-target_include_directories(
+-    ${exe_target}
+-    PRIVATE
+-        "${board_demos_dir}/application_code"
+-)
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::freertos_plus_tcp
+-        AFR::utils
+-        AFR::dev_mode_key_provisioning
+-)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        "${board_dir}/application_code/main.c"
++        "${board_demos_dir}/application_code/aws_demo_logging.c"
++        "${board_demos_dir}/application_code/aws_demo_logging.h"
++        "${board_demos_dir}/application_code/aws_entropy_hardware_poll.c"
++        "${board_demos_dir}/application_code/aws_run-time-stats-utils.c"
++    )
++    target_include_directories(
++        ${exe_target}
++        PRIVATE
++            "${board_demos_dir}/application_code"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::freertos_plus_tcp
++            AFR::utils
++            AFR::dev_mode_key_provisioning
++    )
++endif()
+diff --git a/vendors/pc/boards/windows/aws_demos/application_code/aws_entropy_hardware_poll.c b/vendors/pc/boards/windows/aws_demos/application_code/aws_entropy_hardware_poll.c
+index 7ad028e3d..c1167fc1c 100644
+--- a/vendors/pc/boards/windows/aws_demos/application_code/aws_entropy_hardware_poll.c
++++ b/vendors/pc/boards/windows/aws_demos/application_code/aws_entropy_hardware_poll.c
+@@ -30,7 +30,7 @@
+ 
+ /*-----------------------------------------------------------*/
+ 
+-int lPortGetEntropyFromHardware( void * data,
++int mbedtls_hardware_poll( void * data,
+                            unsigned char * output,
+                            size_t len,
+                            size_t * olen )
+diff --git a/vendors/pc/boards/windows/aws_tests/application_code/main.c b/vendors/pc/boards/windows/aws_tests/application_code/main.c
+index 410ad784b..a9dd6e025 100644
+--- a/vendors/pc/boards/windows/aws_tests/application_code/main.c
++++ b/vendors/pc/boards/windows/aws_tests/application_code/main.c
+@@ -145,9 +145,6 @@ int main( void )
+         0,
+         0 );
+ 
+-    /* Initialize AWS system libraries. */
+-    SYSTEM_Init();
+-
+     /* Initialize the network interface.
+      *
+      ***NOTE*** Tasks that use the network are created in the network event hook
+@@ -176,6 +173,8 @@ void vApplicationIPNetworkEventHook( eIPCallbackEvent_t eNetworkEvent )
+     /* If the network has just come up...*/
+     if( ( eNetworkEvent == eNetworkUp ) && ( xTasksAlreadyCreated == pdFALSE ) )
+     {
++        /* Initialize AWS system libraries. */
++        SYSTEM_Init();
+ 
+         vDevModeKeyProvisioning();
+ 
+diff --git a/vendors/renesas/amazon_freertos_common/entropy_hardware_poll.c b/vendors/renesas/amazon_freertos_common/entropy_hardware_poll.c
+index 3fb385a23..c64caf597 100644
+--- a/vendors/renesas/amazon_freertos_common/entropy_hardware_poll.c
++++ b/vendors/renesas/amazon_freertos_common/entropy_hardware_poll.c
+@@ -15,19 +15,19 @@ void get_random_number(uint8_t *data, uint32_t len);
+ /******************************************************************************
+ Functions : hardware entropy collector(repeatedly called until enough gathered)
+ ******************************************************************************/
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                            unsigned char *output, size_t len, size_t *olen )
+ {
+     R_INTERNAL_NOT_USED(data);
++    R_INTERNAL_NOT_USED(len);
+ 
+     uint32_t random_number = 0;
+-    size_t num_bytes = ( len < 4 ) ? len : 4;
+ 
+-    get_random_number( ( uint8_t * ) &random_number, num_bytes );
++    get_random_number((uint8_t *)&random_number, sizeof(uint32_t));
+     *olen = 0;
+ 
+-    memcpy( output, &random_number, num_bytes );
+-    *olen = num_bytes;
++    memcpy(output, &random_number, sizeof(uint32_t));
++    *olen = sizeof(uint32_t);
+ 
+     return 0;
+ }
+diff --git a/vendors/renesas/boards/rx65n-rsk/CMakeLists.txt b/vendors/renesas/boards/rx65n-rsk/CMakeLists.txt
+index 685623728..2a16bcc0b 100644
+--- a/vendors/renesas/boards/rx65n-rsk/CMakeLists.txt
++++ b/vendors/renesas/boards/rx65n-rsk/CMakeLists.txt
+@@ -247,22 +247,20 @@ set(CMAKE_EXECUTABLE_SUFFIX "abs")
+ afr_glob_src(board_code_src DIRECTORY "${rx65nrsk_aws_dir}/application_code/renesas_code")
+ afr_glob_src(config_files_src DIRECTORY "${rx65nrsk_aws_dir}/config_files")
+ 
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+-
+-add_executable(${exe_target}
+-    ${board_code_src}
+-    ${config_files_src}
+-    "${rx65nrsk_aws_dir}/application_code/main.c"
+-    $<$<NOT:${AFR_IS_TESTING}>:${network_manager_src}>
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::freertos_plus_tcp
+-        AFR::utils
+-)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(${exe_target}
++        ${board_code_src}
++        ${config_files_src}
++        "${rx65nrsk_aws_dir}/application_code/main.c"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::freertos_plus_tcp
++            AFR::utils
++    )
++endif()
+ 
+ if(NOT AFR_METADATA_MODE)
+     message(FATAL_ERROR "CMake support for nxp is not complete yet.")
+diff --git a/vendors/st/boards/stm32l475_discovery/CMakeLists.txt b/vendors/st/boards/stm32l475_discovery/CMakeLists.txt
+index ed8b200a4..4d8a55ee0 100644
+--- a/vendors/st/boards/stm32l475_discovery/CMakeLists.txt
++++ b/vendors/st/boards/stm32l475_discovery/CMakeLists.txt
+@@ -154,57 +154,43 @@ else()
+     set(exe_target aws_demos)
+ endif()
+ 
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+ afr_glob_src(board_code_src DIRECTORY "${board_dir}/application_code/st_code")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-if(AFR_IS_TESTING)
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    ${config_files}
+-    "${board_dir}/application_code/main.c"
+-)
+-else()
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    ${config_files}
+-    ${network_manager_src}
+-    "${board_dir}/application_code/main.c"
+-)
+-endif()
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-        -T"${board_dir}/STM32L475VGTx_FLASH.ld"
+-)
+-
+-if(AFR_METADATA_MODE)
+-    return()
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_code_src}
++        ${config_files}
++        "${board_dir}/application_code/main.c"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++            -T"${board_dir}/STM32L475VGTx_FLASH.ld"
++    )
++
++    if(AFR_METADATA_MODE)
++        return()
++    endif()
++
++    find_program(gcc_objcopy arm-none-eabi-objcopy)
++    find_program(gcc_size arm-none-eabi-size)
++    if(NOT gcc_objcopy)
++        message(FATAL_ERROR "Cannot find arm-none-eabi-objcopy.")
++    endif()
++
++    set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${gcc_objcopy}" -O ihex "$<TARGET_FILE:${exe_target}>" "${output_file}"
++        COMMAND "${gcc_size}" "$<TARGET_FILE:${exe_target}>"
++    )
++    add_custom_command(
++        TARGET ${exe_target} POST_BUILD
++        COMMAND "${CMAKE_COMMAND}" -E copy "${output_file}" "${CMAKE_BINARY_DIR}"
++    )
+ endif()
+-
+-# -------------------------------------------------------------------------------------------------
+-# Additional build configurations
+-# -------------------------------------------------------------------------------------------------
+-
+-find_program(gcc_objcopy arm-none-eabi-objcopy)
+-find_program(gcc_size arm-none-eabi-size)
+-if(NOT gcc_objcopy)
+-    message(FATAL_ERROR "Cannot find arm-none-eabi-objcopy.")
+-endif()
+-
+-set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${gcc_objcopy}" -O ihex "$<TARGET_FILE:${exe_target}>" "${output_file}"
+-    COMMAND "${gcc_size}" "$<TARGET_FILE:${exe_target}>"
+-)
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${CMAKE_COMMAND}" -E copy "${output_file}" "${CMAKE_BINARY_DIR}"
+-)
+diff --git a/vendors/st/boards/stm32l475_discovery/aws_demos/application_code/st_code/entropy_hardware_poll.c b/vendors/st/boards/stm32l475_discovery/aws_demos/application_code/st_code/entropy_hardware_poll.c
+index dd7da661c..4f2082ffc 100644
+--- a/vendors/st/boards/stm32l475_discovery/aws_demos/application_code/st_code/entropy_hardware_poll.c
++++ b/vendors/st/boards/stm32l475_discovery/aws_demos/application_code/st_code/entropy_hardware_poll.c
+@@ -49,11 +49,11 @@
+ #include "main.h"
+ #include "stm32l4xx_hal.h"
+ 
+-int lPortGetEntropyFromHardware( void *data, unsigned char *output, size_t len, size_t *olen );
++int mbedtls_hardware_poll( void *data, unsigned char *output, size_t len, size_t *olen );
+ 
+ 
+ 
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                     unsigned char *output, size_t len, size_t *olen )
+ {
+   HAL_StatusTypeDef status = HAL_OK;
+diff --git a/vendors/st/boards/stm32l475_discovery/aws_tests/application_code/st_code/entropy_hardware_poll.c b/vendors/st/boards/stm32l475_discovery/aws_tests/application_code/st_code/entropy_hardware_poll.c
+index f7eb98345..8363fd55d 100644
+--- a/vendors/st/boards/stm32l475_discovery/aws_tests/application_code/st_code/entropy_hardware_poll.c
++++ b/vendors/st/boards/stm32l475_discovery/aws_tests/application_code/st_code/entropy_hardware_poll.c
+@@ -48,11 +48,11 @@
+ #include <string.h>
+ #include "main.h"
+ 
+-int lPortGetEntropyFromHardware( void *data, unsigned char *output, size_t len, size_t *olen );
++int mbedtls_hardware_poll( void *data, unsigned char *output, size_t len, size_t *olen );
+ 
+ 
+ 
+-int lPortGetEntropyFromHardware( void *data,
++int mbedtls_hardware_poll( void *data,
+                     unsigned char *output, size_t len, size_t *olen )
+ {
+   HAL_StatusTypeDef status = HAL_OK;
+diff --git a/vendors/ti/boards/cc3220_launchpad/CMakeLists.txt b/vendors/ti/boards/cc3220_launchpad/CMakeLists.txt
+index 4fa51301d..1ef1c0d1d 100644
+--- a/vendors/ti/boards/cc3220_launchpad/CMakeLists.txt
++++ b/vendors/ti/boards/cc3220_launchpad/CMakeLists.txt
+@@ -174,41 +174,41 @@ target_sources(
+ # -------------------------------------------------------------------------------------------------
+ set(CMAKE_EXECUTABLE_SUFFIX ".out")
+ 
+-# TODO, remove network manager src.
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+ afr_glob_src(board_code_src DIRECTORY "${board_dir}/application_code/ti_code")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    ${config_files}
+-    "${board_dir}/application_code/main.c"
+-    $<$<NOT:${AFR_IS_TESTING}>:${network_manager_src}>
+-    "${board_dir}/application_code/ti_code/CC3220SF_LAUNCHXL_FREERTOS.cmd"
+-)
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::wifi
+-        AFR::utils
+-        AFR::posix::mcu_port
+-        ${link_extra_flags}
+-)
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
+-)
+-
+-find_program(tiobj2bin tiobj2bin PATHS "${TI_CCS_PATH}/utils/tiobj2bin")
+-find_program(mkhex4bin mkhex4bin PATHS "${TI_CCS_PATH}/utils/tiobj2bin")
+-find_program(armofd armofd PATHS "${AFR_COMPILER_DIR}")
+-find_program(armhex armhex PATHS "${AFR_COMPILER_DIR}")
+-if(tiobj2bin)
+-    set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_code_src}
++        ${config_files}
++        "${board_dir}/application_code/main.c"
++        "${board_dir}/application_code/ti_code/CC3220SF_LAUNCHXL_FREERTOS.cmd"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::wifi
++            AFR::utils
++            AFR::posix::mcu_port
++            ${link_extra_flags}
++    )
+     add_custom_command(
+         TARGET ${exe_target} POST_BUILD
+-        COMMAND "${tiobj2bin}" "${CMAKE_BINARY_DIR}/${exe_target}.out" "${CMAKE_BINARY_DIR}/${exe_target}.bin"
+-                "${armofd}" "${armhex}" "${mkhex4bin}"
++        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
+     )
++
++    find_program(tiobj2bin tiobj2bin PATHS "${TI_CCS_PATH}/utils/tiobj2bin")
++    find_program(mkhex4bin mkhex4bin PATHS "${TI_CCS_PATH}/utils/tiobj2bin")
++    find_program(armofd armofd PATHS "${AFR_COMPILER_DIR}")
++    find_program(armhex armhex PATHS "${AFR_COMPILER_DIR}")
++    if(tiobj2bin)
++        set(output_file "$<TARGET_FILE_DIR:${exe_target}>/${exe_target}.hex")
++        add_custom_command(
++            TARGET ${exe_target} POST_BUILD
++            COMMAND "${tiobj2bin}" "${CMAKE_BINARY_DIR}/${exe_target}.out" "${CMAKE_BINARY_DIR}/${exe_target}.bin"
++                    "${armofd}" "${armhex}" "${mkhex4bin}"
++        )
++    endif()
+ endif()
+diff --git a/vendors/ti/boards/cc3220_launchpad/ports/pkcs11/iot_pkcs11_pal.c b/vendors/ti/boards/cc3220_launchpad/ports/pkcs11/iot_pkcs11_pal.c
+index 0a6e2785c..7aa99175b 100644
+--- a/vendors/ti/boards/cc3220_launchpad/ports/pkcs11/iot_pkcs11_pal.c
++++ b/vendors/ti/boards/cc3220_launchpad/ports/pkcs11/iot_pkcs11_pal.c
+@@ -657,10 +657,10 @@ CK_OBJECT_HANDLE PKCS11_PAL_SaveObject( CK_ATTRIBUTE_PTR pxLabel,
+ 
+ /*-----------------------------------------------------------*/
+ 
+-int lPortGetEntropyFromHardware( void * data,
+-                                  unsigned char * output,
+-                                  size_t len,
+-                                  size_t * olen )
++int mbedtls_hardware_poll( void * data,
++                           unsigned char * output,
++                           size_t len,
++                           size_t * olen )
+ {
+     int lStatus = MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+ 
+diff --git a/vendors/vendor/boards/board/CMakeLists.txt b/vendors/vendor/boards/board/CMakeLists.txt
+index 37c3db378..04a3bda8e 100644
+--- a/vendors/vendor/boards/board/CMakeLists.txt
++++ b/vendors/vendor/boards/board/CMakeLists.txt
+@@ -215,24 +215,27 @@ afr_set_board_metadata(KEY_IMPORT_PROVISIONING "TRUE")
+ # scripts and post build commands.
+ 
+ # ==================== Example ====================
+-# set(CMAKE_EXECUTABLE_SUFFIX ".out")
+-
+-# set(default_modules AFR::wifi AFR::utils)
+-
+-# if(AFR_IS_TESTING)
+-#     set(exe_target aws_tests)
+-# else()
+-#     set(exe_target aws_demos)
++# Do not add demos or tests if they're turned off.
++# if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++#     set(CMAKE_EXECUTABLE_SUFFIX ".out")
++
++#     set(default_modules AFR::wifi AFR::utils)
++
++#     if(AFR_IS_TESTING)
++#         set(exe_target aws_tests)
++#     else()
++#         set(exe_target aws_demos)
++#     endif()
++
++#     add_executable(${exe_target} "${board_dir}/application_code/main.c")
++#     target_link_libraries(
++#         ${exe_target}
++#         PRIVATE
++#             ${default_modules}
++#             ${additional_linker_file_and_flags}
++#     )
++#     add_custom_command(
++#         TARGET ${exe_target} POST_BUILD
++#         COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
++#     )
+ # endif()
+-
+-# add_executable(${exe_target} "${board_dir}/application_code/main.c")
+-# target_link_libraries(
+-#     ${exe_target}
+-#     PRIVATE
+-#         ${default_modules}
+-#         ${additional_linker_file_and_flags}
+-# )
+-# add_custom_command(
+-#     TARGET ${exe_target} POST_BUILD
+-#     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:${exe_target}>" "${CMAKE_BINARY_DIR}"
+-# )
+diff --git a/vendors/vendor/boards/board/ports/pkcs11/iot_pkcs11_pal.c b/vendors/vendor/boards/board/ports/pkcs11/iot_pkcs11_pal.c
+index 19bcccac8..d5e563988 100644
+--- a/vendors/vendor/boards/board/ports/pkcs11/iot_pkcs11_pal.c
++++ b/vendors/vendor/boards/board/ports/pkcs11/iot_pkcs11_pal.c
+@@ -38,99 +38,97 @@
+ 
+ 
+ /**
+- * @brief Writes a file to local storage.
+- *
+- * Port-specific file write for crytographic information.
+- *
+- * @param[in] pxLabel       Label of the object to be saved.
+- * @param[in] pucData       Data buffer to be written to file
+- * @param[in] ulDataSize    Size (in bytes) of data to be saved.
+- *
+- * @return The file handle of the object that was stored.
+- */
++* @brief Writes a file to local storage.
++*
++* Port-specific file write for crytographic information.
++*
++* @param[in] pxLabel       Label of the object to be saved.
++* @param[in] pucData       Data buffer to be written to file
++* @param[in] ulDataSize    Size (in bytes) of data to be saved.
++*
++* @return The file handle of the object that was stored.
++*/
+ CK_OBJECT_HANDLE PKCS11_PAL_SaveObject( CK_ATTRIBUTE_PTR pxLabel,
+-                                        uint8_t * pucData,
+-                                        uint32_t ulDataSize )
++    uint8_t * pucData,
++    uint32_t ulDataSize )
+ {
+     CK_OBJECT_HANDLE xHandle = 0;
+-
+     return xHandle;
+ }
+ 
+ /**
+- * @brief Translates a PKCS #11 label into an object handle.
+- *
+- * Port-specific object handle retrieval.
+- *
+- *
+- * @param[in] pLabel         Pointer to the label of the object
+- *                           who's handle should be found.
+- * @param[in] usLength       The length of the label, in bytes.
+- *
+- * @return The object handle if operation was successful.
+- * Returns eInvalidHandle if unsuccessful.
+- */
++* @brief Translates a PKCS #11 label into an object handle.
++*
++* Port-specific object handle retrieval.
++*
++*
++* @param[in] pLabel         Pointer to the label of the object
++*                           who's handle should be found.
++* @param[in] usLength       The length of the label, in bytes.
++*
++* @return The object handle if operation was successful.
++* Returns eInvalidHandle if unsuccessful.
++*/
+ CK_OBJECT_HANDLE PKCS11_PAL_FindObject( uint8_t * pLabel,
+-                                        uint8_t usLength )
++    uint8_t usLength )
+ {
+     CK_OBJECT_HANDLE xHandle = 0;
+-
+     return xHandle;
+ }
+ 
+ /**
+- * @brief Gets the value of an object in storage, by handle.
+- *
+- * Port-specific file access for cryptographic information.
+- *
+- * This call dynamically allocates the buffer which object value
+- * data is copied into.  PKCS11_PAL_GetObjectValueCleanup()
+- * should be called after each use to free the dynamically allocated
+- * buffer.
+- *
+- * @sa PKCS11_PAL_GetObjectValueCleanup
+- *
+- * @param[in] pcFileName    The name of the file to be read.
+- * @param[out] ppucData     Pointer to buffer for file data.
+- * @param[out] pulDataSize  Size (in bytes) of data located in file.
+- * @param[out] pIsPrivate   Boolean indicating if value is private (CK_TRUE)
+- *                          or exportable (CK_FALSE)
+- *
+- * @return CKR_OK if operation was successful.  CKR_KEY_HANDLE_INVALID if
+- * no such object handle was found, CKR_DEVICE_MEMORY if memory for
+- * buffer could not be allocated, CKR_FUNCTION_FAILED for device driver
+- * error.
+- */
++* @brief Gets the value of an object in storage, by handle.
++*
++* Port-specific file access for cryptographic information.
++*
++* This call dynamically allocates the buffer which object value
++* data is copied into.  PKCS11_PAL_GetObjectValueCleanup()
++* should be called after each use to free the dynamically allocated
++* buffer.
++*
++* @sa PKCS11_PAL_GetObjectValueCleanup
++*
++* @param[in] pcFileName    The name of the file to be read.
++* @param[out] ppucData     Pointer to buffer for file data.
++* @param[out] pulDataSize  Size (in bytes) of data located in file.
++* @param[out] pIsPrivate   Boolean indicating if value is private (CK_TRUE)
++*                          or exportable (CK_FALSE)
++*
++* @return CKR_OK if operation was successful.  CKR_KEY_HANDLE_INVALID if
++* no such object handle was found, CKR_DEVICE_MEMORY if memory for
++* buffer could not be allocated, CKR_FUNCTION_FAILED for device driver
++* error.
++*/
+ CK_RV PKCS11_PAL_GetObjectValue( CK_OBJECT_HANDLE xHandle,
+-                                 uint8_t ** ppucData,
+-                                 uint32_t * pulDataSize,
+-                                 CK_BBOOL * pIsPrivate )
++    uint8_t ** ppucData,
++    uint32_t * pulDataSize,
++    CK_BBOOL * pIsPrivate )
+ {
+     CK_RV xReturn = CKR_OK;
+-
+     return xReturn;
+ }
+ 
+ 
+ /**
+- * @brief Cleanup after PKCS11_GetObjectValue().
+- *
+- * @param[in] pucData       The buffer to free.
+- *                          (*ppucData from PKCS11_PAL_GetObjectValue())
+- * @param[in] ulDataSize    The length of the buffer to free.
+- *                          (*pulDataSize from PKCS11_PAL_GetObjectValue())
+- */
++* @brief Cleanup after PKCS11_GetObjectValue().
++*
++* @param[in] pucData       The buffer to free.
++*                          (*ppucData from PKCS11_PAL_GetObjectValue())
++* @param[in] ulDataSize    The length of the buffer to free.
++*                          (*pulDataSize from PKCS11_PAL_GetObjectValue())
++*/
+ void PKCS11_PAL_GetObjectValueCleanup( uint8_t * pucData,
+-                                       uint32_t ulDataSize )
++    uint32_t ulDataSize )
+ {
++    
+ }
+ 
+ /*-----------------------------------------------------------*/
+ 
+-int lPortGetEntropyFromHardware( void * data,
+-                                  unsigned char * output,
+-                                  size_t len,
+-                                  size_t * olen )
++int mbedtls_hardware_poll( void * data,
++                           unsigned char * output,
++                           size_t len,
++                           size_t * olen )
+ {
+     /* FIX ME. */
+     return 0;
+diff --git a/vendors/xilinx/boards/microzed/CMakeLists.txt b/vendors/xilinx/boards/microzed/CMakeLists.txt
+index 4b83bdfc0..79b966931 100644
+--- a/vendors/xilinx/boards/microzed/CMakeLists.txt
++++ b/vendors/xilinx/boards/microzed/CMakeLists.txt
+@@ -167,25 +167,9 @@ target_link_libraries(
+ # -------------------------------------------------------------------------------------------------
+ set(CMAKE_EXECUTABLE_SUFFIX ".elf")
+ 
+-afr_glob_src(network_manager_src DIRECTORY "${AFR_DEMOS_DIR}/network_manager")
+ afr_glob_src(board_code_src DIRECTORY "${board_dir}/application_code/xilinx_code")
+ afr_glob_src(config_files DIRECTORY "${board_dir}/config_files")
+ 
+-add_executable(
+-    ${exe_target}
+-    ${board_code_src}
+-    "${board_dir}/application_code/xilinx_code/FreeRTOS_tick_config.c"
+-    ${config_files}
+-    "${board_dir}/application_code/main.c"
+-    $<$<NOT:${AFR_IS_TESTING}>:${network_manager_src}>
+-)
+-
+-target_link_libraries(
+-    ${exe_target}
+-    PRIVATE
+-        AFR::utils
+-)
+-
+ # The kernel is the root dependency, linking the library flags like this ensures it adds the flags last in the command line
+ set(link_extra_flags -Wl,--start-group,-lxilffs,-lxil,-lgcc,-lc,-lrsa,--end-group)
+ 
+@@ -195,21 +179,36 @@ target_link_libraries(
+         ${link_extra_flags}
+ )
+ 
+-
+-set(bootgen  "${AFR_COMPILER_DIR}/../../../../../bin/bootgen.bat")
+-
+-if(AFR_IS_TESTING)
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "echo" "Running Post-build step"
+-    COMMAND "${bootgen}" -w -image "${board_dir}/aws_tests.bif" -arch zynq -o BOOT.bin
+-)
+-else()
+-add_custom_command(
+-    TARGET ${exe_target} POST_BUILD
+-    COMMAND "echo" "Running Post-build step"
+-    COMMAND "${bootgen}" -w -image "${board_dir}/aws_demos.bif" -arch zynq -o BOOT.bin
+-)
++# Do not add demos or tests if they're turned off.
++if(AFR_ENABLE_DEMOS OR AFR_ENABLE_TESTS)
++    add_executable(
++        ${exe_target}
++        ${board_code_src}
++        ${config_files}
++        "${board_dir}/application_code/xilinx_code/FreeRTOS_tick_config.c"
++        "${board_dir}/application_code/main.c"
++    )
++    target_link_libraries(
++        ${exe_target}
++        PRIVATE
++            AFR::utils
++    )
++
++    set(bootgen  "${AFR_COMPILER_DIR}/../../../../../bin/bootgen.bat")
++
++    if(AFR_IS_TESTING)
++        add_custom_command(
++            TARGET ${exe_target} POST_BUILD
++            COMMAND "echo" "Running Post-build step"
++            COMMAND "${bootgen}" -w -image "${board_dir}/aws_tests.bif" -arch zynq -o BOOT.bin
++        )
++    else()
++        add_custom_command(
++            TARGET ${exe_target} POST_BUILD
++            COMMAND "echo" "Running Post-build step"
++            COMMAND "${bootgen}" -w -image "${board_dir}/aws_demos.bif" -arch zynq -o BOOT.bin
++        )
++    endif()
+ endif()
+ 
+ if(NOT AFR_METADATA_MODE)
+diff --git a/vendors/xilinx/boards/microzed/ports/pkcs11/iot_pkcs11_pal.c b/vendors/xilinx/boards/microzed/ports/pkcs11/iot_pkcs11_pal.c
+index e579ecb35..cf4de632f 100644
+--- a/vendors/xilinx/boards/microzed/ports/pkcs11/iot_pkcs11_pal.c
++++ b/vendors/xilinx/boards/microzed/ports/pkcs11/iot_pkcs11_pal.c
+@@ -333,10 +333,10 @@ void PKCS11_PAL_GetObjectValueCleanup( uint8_t * pucData,
+ }
+ 
+ 
+-int lPortGetEntropyFromHardware( void * data,
+-                                  unsigned char * output,
+-                                  size_t len,
+-                                  size_t * olen )                        
++int mbedtls_hardware_poll( void * data,
++                           unsigned char * output,
++                           size_t len,
++                           size_t * olen )
+ {
+     ( void ) data;
+ 
