@@ -23,7 +23,7 @@ class GitAnalyzer:
         self.makefile_dependency_text = makefile_dependency_text
 
     def _run(self, cmd, working_dir=None):
-        p = subprocess.check_output(cmd.split(" "), cwd=working_dir, universal_newlines=True)
+        p = subprocess.check_output(cmd.split(" "), cwd=working_dir, universal_newlines=True, encoding="437")
         return str(p)
 
     def adapt_makefile(self):
@@ -268,6 +268,9 @@ dependency:
     def compare_file(self, filepaths, base, head):
         diff_filename = "diff_files/" + base + "_" + head + ".diff"
         if not os.path.exists(diff_filename):
+            print(base)
+            print(head)
+
             diff = self._run("git diff {} {}".format(base, head), working_dir=self.local_repo_folder)
             f = open(diff_filename, "w")
             f.write(diff)
