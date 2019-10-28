@@ -66,6 +66,16 @@ Resources:
                   - s3:ListBucket
                 Effect: Allow
                 Resource: !Sub "arn:aws:s3:::${S3BucketToolsName}"
+
+              - Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Effect: Allow
+                Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
+              - Action:
+                  - s3:ListBucket
+                Effect: Allow
+                Resource: !Sub "${S3BucketProofs.Arn}"
               - Action:
                   - batch:DescribeJobQueues
                   - batch:DescribeJobDefinitions
