@@ -120,6 +120,7 @@ Resources:
         Variables:
           PROJECT_NAME: !Ref ProjectName
           S3_BKT: !Ref S3BucketToolsName
+          S3_BUCKET_PROOFS: !Ref S3BucketProofs
           PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
           CBMC_CI_UPDATING_STATUS: True
 

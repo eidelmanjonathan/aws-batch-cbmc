@@ -18,7 +18,7 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname):
     if jobname:
         kwds['target_url'] = (
             "https://s3.console.aws.amazon.com/s3/buckets/{}/{}/out/"
-            .format(os.environ['S3_BUCKET_PROOFS'], jobname)
+            .format(os.environ['S3_BKT'], jobname)
             )
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')
@@ -179,7 +179,7 @@ def get_tar(name, full_name, sha, tmp_dir):
     timer = Timer("Uploading tar containing code for commit to S3")
     s3 = boto3.client('s3')
     s3.upload_file(
-        Bucket=os.environ['S3_BUCKET_PROOFS'], Key=tar_file, Filename=tar_path)
+        Bucket=os.environ['S3_BKT'], Key=tar_file, Filename=tar_path)
     timer.end()
 
     return (tar_path, tar_file)
