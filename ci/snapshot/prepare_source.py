@@ -35,8 +35,7 @@ PREPARE_FILE = 'prepare.py'
 YAML_NAME = "cbmc-batch.yaml"
 
 # S3 Bucket name for storing CBMC Batch packages and outputs
-# FIX: Lambdas put S3_BKT in env, CodeBuild puts S3_BUCKET in env.
-BKT = os.environ.get('S3_BKT') or os.environ.get('S3_BUCKET')
+BKT = os.environ.get('S3_BUCKET_PROOFS')
 
 ################################################################
 # argument parsing
