@@ -21,6 +21,7 @@ def read_from_s3(s3_path):
     For getting bookkeeping information from the S3 bucket.
     """
     s3 = boto3.client('s3')
+    print("Reading from S3 {}".format(bkt_proofs))
     return s3.get_object(Bucket=bkt_proofs, Key=s3_path)['Body'].read()
 
 
