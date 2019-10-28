@@ -91,6 +91,8 @@ def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, 
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
             value = s3_bucket_tools_name
+        if key == "BuildToolsAccountId":
+            value = s3_bucket_tools_name.split("-")[0]
         elif key=="ProofAccountIds" and proof_account_ids:
             value = ",".join(list(map(lambda p: "arn:aws:iam::{}:root".format(p), proof_account_ids)))
         else:
@@ -271,6 +273,7 @@ def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=F
     deploy('github',
            "github.yaml",
            ['S3BucketToolsName',
+            'BuildToolsAccountId',
             'ProjectName',
             'SnapshotID',
             'GitHubRepository',
@@ -445,7 +448,6 @@ def main():
         snapshot_id = args.snapshotid
         snapshot_file = "snapshot-{}.json".format(snapshot_id)
         build_tools_bucket = build_stacks.get_output("S3BucketName")
-
         key = "snapshot/snapshot-{}/{}".format(snapshot_id, snapshot_file)
         print(build_tools_bucket, key, snapshot_file)
         build_session.client('s3').download_file(Bucket=build_tools_bucket, Key=key, Filename=snapshot_file)
