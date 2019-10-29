@@ -91,7 +91,7 @@ def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, 
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
             value = s3_bucket_tools_name
-        if key == "BuildToolsAccountId":
+        elif key == "BuildToolsAccountId":
             value = s3_bucket_tools_name.split("-")[0]
         elif key=="ProofAccountIds" and proof_account_ids:
             value = ",".join(list(map(lambda p: "arn:aws:iam::{}:root".format(p), proof_account_ids)))
