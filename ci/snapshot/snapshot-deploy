@@ -91,7 +91,7 @@ def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, 
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
             value = s3_bucket_tools_name
-        elif key == "BuildToolsAccountId":
+        elif key == "BuildToolsAccountId" and s3_bucket_tools_name:
             value = s3_bucket_tools_name.split("-")[0]
         elif key=="ProofAccountIds" and proof_account_ids:
             value = ",".join(list(map(lambda p: "arn:aws:iam::{}:root".format(p), proof_account_ids)))
@@ -285,7 +285,7 @@ def deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket=None, loc
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('cbmc-batch',
            "cbmc.yaml",
-           ['ImageTagSuffix'],
+           ['ImageTagSuffix', 'BuildToolsAccountId'],
            stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
 def deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
