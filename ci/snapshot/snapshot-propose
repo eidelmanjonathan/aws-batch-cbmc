@@ -448,7 +448,10 @@ def main():
     resources = aws_resources(args)
 
     if args.show_current_snapshot:
-        print(get_current_snapshot_json(**resources[Act.prod]))
+        current_snapshot_id = get_current_snapshot_id(resources[Act.prod]["cf"])
+        build_snapshot = get_current_snapshot_json(resources[Act.build]["s3"], resources[Act.build]["bkt"],
+                                                              current_snapshot_id=current_snapshot_id)
+        print(build_snapshot)
         sys.exit()
 
     if args.show_last_snapshot:
