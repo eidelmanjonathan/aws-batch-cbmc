@@ -30,6 +30,9 @@ def create_parser():
                      metavar='PROFILE',
                      help='The AWS account profile (the default for beta, prod, build).'
                     )
+    arg.add_argument('--cloudfront-profile',
+                     metavar='PROFILE',
+                     help='Cloudfront needs to be in us-east-1')
     arg.add_argument('--proof-account-ids',
                      metavar='ID',
                      nargs="+",
@@ -268,12 +271,20 @@ def main():
 
     cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
     run(cmd.format(build_profile, sid))
+
+    cmd = './snapshot-deploy --profile {} --s3-proofs --snapshotid {}'
+    run(cmd.format(profile, sid))
+
+
+    cmd = './snapshot-deploy --profile {} --cloudfront {} --snapshot snapshot-{}.json'
+    run(cmd.format(profile, args.cloudfront_profile, sid))
+
     if args.proof_account_ids:
-        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --proof-account-ids {}'
-        run(cmd.format(profile, build_profile, sid, " ".join(args.proof_account_ids)))
+        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --proof-account-ids {} --cloudfront {}'
+        run(cmd.format(profile, build_profile, sid, " ".join(args.proof_account_ids), args.cloudfront_profile))
     else:
-        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
-        run(cmd.format(profile, build_profile, sid))
+        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --cloudfront {}'
+        run(cmd.format(profile, build_profile, sid, args.cloudfront_profile))
 
     cmd = './snapshot-variable --profile {} --operational'
     run(cmd.format(profile))

@@ -23,21 +23,15 @@ Parameters:
     Type: String
     Default: ""
 
-  S3BucketSuffix:
+  S3BucketProofsName:
     Type: String
     Default: "proofs"
-    Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
+
+  CloudFrontUrl:
+    Type: String
+    Description: "URL to the cloudfront"
 
 Resources:
-
-  S3BucketProofs:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}"
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
 
   BatchLambdaRole:
     Type: AWS::IAM::Role
@@ -73,11 +67,11 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
+                Resource: !Sub "arn:aws:s3:::${S3BucketProofsName}"
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub "${S3BucketProofs.Arn}"
+                Resource: !Sub "arn:aws:s3:::${S3BucketProofsName}"
               - Action:
                   - batch:DescribeJobQueues
                   - batch:DescribeJobDefinitions
@@ -132,9 +126,10 @@ Resources:
         Variables:
           PROJECT_NAME: !Ref ProjectName
           S3_BKT: !Ref S3BucketToolsName
-          S3_BUCKET_PROOFS: !Ref S3BucketProofs
+          S3_BUCKET_PROOFS: !Ref S3BucketProofsName
           PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
           CBMC_CI_UPDATING_STATUS: True
+          CLOUDFRONT_URL: !Ref CloudFrontUrl
 
   BatchEventRule:
     Type: AWS::Events::Rule
@@ -403,11 +398,11 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
+                Resource: !Sub "arn:aws:s3:::${S3BucketToolsName}"
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub "${S3BucketProofs.Arn}"
+                Resource: !Sub "arn:aws:s3:::${S3BucketToolsName}"
               - Action:
                   - secretsmanager:GetSecretValue
                 Effect: Allow
@@ -445,7 +440,7 @@ Resources:
             Value: !Ref S3BucketToolsName
           - Name: S3_BUCKET_PROOFS
             Type: PLAINTEXT
-            Value: !Ref S3BucketProofs
+            Value: !Ref S3BucketProofsName
           - Name: S3_BKT
             Type: PLAINTEXT
             Value: !Ref S3BucketToolsName

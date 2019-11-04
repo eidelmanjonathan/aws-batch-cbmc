@@ -14,6 +14,7 @@ from cbmc_ci_github import update_status
 
 # S3 Bucket name for storing CBMC Batch packages and outputs
 bkt = os.environ['S3_BUCKET_PROOFS']
+cloudfront_url = os.environ["CLOUDFRONT_URL"]
 
 def read_from_s3(s3_path):
     """Read from a file in S3 Bucket
@@ -55,6 +56,87 @@ class Job_name_info:
         """
         return self.job_name
 
+
+def get_most_recent_run_id(bucket, sha):
+    prefix = "pending_files/{}".format(sha)
+    s3 = boto3.client('s3')
+    response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+    if not response:
+        return 0
+    try:
+        keys = [object['Key'] for object in response['Contents']]
+    except Exception:
+        keys = []
+    run_ids = set()
+    for key in keys:
+        results = re.search(prefix + "/\d*/", key)
+        if results:
+            id = results.group(0).replace(prefix, "")
+            id = id[:len(id)-1]
+            id = id[1:]
+            run_ids.add(int(id))
+    if not run_ids:
+        return 0
+    return max(run_ids)
+
+
+
+def write_complete_file(bucket, jobname, sha, status):
+    print("Creating complete status file for: %s with sha: %s", jobname, sha)
+    s3 = boto3.client('s3')
+    id = get_most_recent_run_id(bucket, sha)
+    key = "complete_jobs/{}/{}/{}".format(sha, id, jobname)
+    s3.put_object(Bucket=bucket, Key=key, Body=status, ContentType="text/html")
+
+def list_objects(bucket, prefix):
+    s3 = boto3.client('s3')
+    response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+    if not response:
+        return []
+    try:
+        resp_keys = [object['Key'] for object in response['Contents']]
+    except Exception:
+        resp_keys = []
+    return resp_keys
+
+def get_object(bucket, key):
+    s3 = boto3.client('s3')
+    response = s3.get_object(Bucket=bucket, Key=key)
+    if not response:
+        return None
+    return response["Body"].read().decode("utf-8")
+
+def get_compiled_status(bucket, sha):
+    id = get_most_recent_run_id(bucket, sha)
+    completed_prefix = "complete_jobs/{}/{}".format(sha, id)
+    completed_keys = list_objects(bucket, completed_prefix)
+    statuses = {}
+    for key in completed_keys:
+        status = get_object(bucket, key)
+        if status:
+            statuses[key.replace(completed_prefix, "").replace("-property", "")[1:]] = status
+    return statuses
+
+def all_jobs_completed(bucket, sha):
+    id = get_most_recent_run_id(bucket, sha)
+    completed_prefix = "complete_jobs/{}/{}".format(sha, id)
+    completed_keys = list_objects(bucket, completed_prefix)
+    completed_keys = list(map(lambda ck: ck.replace("-property", "").replace("complete_jobs/", ""), completed_keys))
+    pending_prefix = "pending_files/{}/{}".format(sha, id)
+    pending_keys = list_objects(bucket, pending_prefix)
+    pending_keys = list(map(lambda pk: pk.replace("pending_files/", ""), pending_keys))
+
+    print("pending: {}, completed: {}".format(pending_keys, completed_keys))
+    return all(pk in completed_keys for pk in pending_keys)
+
+
+def generate_status_html(statuses):
+    html = "<!DOCTYPE html><html><body><table>"
+    for proof in statuses.keys():
+        html += "<tr><td>{}</td><td>{}</td></tr>".format(proof, statuses[proof])
+    html+= "</table></body></html>"
+    return html
+
 def lambda_handler(event, context):
     """
     Update the status of the GitHub commit appropriately depending on CBMC
@@ -78,6 +160,7 @@ def lambda_handler(event, context):
     job_name = event["detail"]["jobName"]
     status = event["detail"]["status"]
     job_name_info = Job_name_info(job_name)
+
     if (status in ["SUCCEEDED", "FAILED"] and
             job_name_info.is_cbmc_batch_property_job):
         s3_dir = job_name_info.get_s3_dir()
@@ -96,12 +179,23 @@ def lambda_handler(event, context):
             cbmc = read_from_s3(s3_dir + "/out/cbmc.txt")
             if expected in cbmc:
                 print("Expected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                # update_status(
+                #     "success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                write_complete_file(bkt, job_name, sha, "success")
             else:
                 print("Unexpected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                write_complete_file(bkt, job_name, sha, "failure")
+
+                # update_status(
+                #     "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+            if all_jobs_completed(bkt, sha):
+                compiled_status = get_compiled_status(bkt, sha)
+                html = generate_status_html(compiled_status)
+                status_html_url = cloudfront_url + "/complete_jobs/{}/{}/COMPLETE.html"\
+                    .format(sha, get_most_recent_run_id(bkt, sha))
+                write_complete_file(bkt, "COMPLETE.html", sha, html)
+                update_status("failure" if "failure" in html else "success", "CBMC Batch Checks", status_html_url,"CBMC Batch Checks",
+                              repo_id, sha, is_draft, target_url=status_html_url)
         except Exception as e:
             traceback.print_exc()
             # CBMC Error
@@ -111,6 +205,8 @@ def lambda_handler(event, context):
             raise e
     else:
         print("No action for " + job_name + ": " + status)
+
+
 
     # pylint says return None is useless
     # return None

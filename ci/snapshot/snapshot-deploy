@@ -38,6 +38,13 @@ def create_parser():
                      metavar='NAME',
                      help='AWS build tools account profile name')
 
+    arg.add_argument('--cloudfront',
+                     metavar="PROFILE",
+                     help="Deploy cloudfront - note that this must be in us-east-1")
+    arg.add_argument('--s3-proofs',
+                     action='store_true',
+                     help="Deploy the S3 bucket to store proofs")
+
     arg.add_argument('--snapshot',
                      metavar='FILE',
                      help='Snapshot file to deploy from filesystem'
@@ -86,7 +93,7 @@ def get_value(name, stacks, snapshot, secrets):
     except:
         return None
 
-def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
+def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, cloudfront_url = None, proof_account_ids=None):
     parameters = []
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
@@ -95,8 +102,11 @@ def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, 
             value = s3_bucket_tools_name.split("-")[0]
         elif key=="ProofAccountIds" and proof_account_ids:
             value = ",".join(list(map(lambda p: "arn:aws:iam::{}:root".format(p), proof_account_ids)))
+        elif cloudfront_url and key == "CloudFrontUrl":
+            value = cloudfront_url
         else:
             value = get_value(key, stacks, snapshot, secrets)
+            print("got {}, {}".format(key, value))
         if value is not None:
             parameters.append({"ParameterKey": key, "ParameterValue": value})
     return parameters
@@ -106,18 +116,18 @@ def print_parameters(parameters):
         print("  {:20}: {}".format(param['ParameterKey'], param['ParameterValue']))
 
 def deploy_stack_local(stack_name, template_name, parameter_keys,
-                       stacks, snapshot, secrets, s3_bucket_name=None):
+                       stacks, snapshot, secrets, s3_bucket_name=None, cloudfront_url = None, cloudfront_stacks = None):
     stack_name = stack_name
     template_body = open(template_name).read()
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets, s3_bucket_tools_name=s3_bucket_name)
+    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets, cloudfront_url=cloudfront_url, s3_bucket_tools_name=s3_bucket_name)
     capabilities = ['CAPABILITY_NAMED_IAM']
-
+    stacks_to_use = cloudfront_stacks if cloudfront_stacks else stacks
     try:
-        if stacks.get_status(stack_name) is None:
+        if stacks_to_use.get_status(stack_name) is None:
             print("\nCreating stack '{}' with parameters".format(stack_name))
             print_parameters(parameters)
             print("Using " + template_name)
-            stacks.get_client().create_stack(StackName=stack_name,
+            stacks_to_use.get_client().create_stack(StackName=stack_name,
                                              TemplateBody=template_body,
                                              Parameters=parameters,
                                              Capabilities=capabilities)
@@ -125,7 +135,7 @@ def deploy_stack_local(stack_name, template_name, parameter_keys,
             print("\nUpdating stack '{}' with parameters".format(stack_name))
             print_parameters(parameters)
             print("Using " + template_name)
-            stacks.get_client().update_stack(StackName=stack_name,
+            stacks_to_use.get_client().update_stack(StackName=stack_name,
                                              TemplateBody=template_body,
                                              Parameters=parameters,
                                              Capabilities=capabilities)
@@ -138,7 +148,7 @@ def deploy_stack_local(stack_name, template_name, parameter_keys,
             raise
 
 def deploy_stack_s3(stack_name, template_name, parameter_keys,
-                    stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
+                    stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_ids=None, cloudfront_url = None, cloudfront_stacks = None):
     print("Deplopying stack s3: " + str(s3_bucket_tools_name))
     stack_name = stack_name
     s3_bucket_tools_name = s3_bucket_tools_name if s3_bucket_tools_name else stacks.get_output('S3BucketName')
@@ -147,8 +157,9 @@ def deploy_stack_s3(stack_name, template_name, parameter_keys,
                      .format(s3_bucket_tools_name,
                              snapshot.get_parameter('SnapshotID'),
                              template_name))
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets,
-                                 s3_bucket_tools_name=s3_bucket_tools_name, proof_account_ids=proof_account_ids)
+
+    parameters = make_parameters(parameter_keys, cloudfront_stacks if cloudfront_stacks else stacks, snapshot, secrets,
+                                 s3_bucket_tools_name=s3_bucket_tools_name, cloudfront_url=cloudfront_url, proof_account_ids=proof_account_ids)
     capabilities = ['CAPABILITY_NAMED_IAM']
 
     try:
@@ -255,6 +266,32 @@ def deploy_build_cbmc_linux(stacks, snapshot, secrets, local=False):
             'CBMCBranchName'],
            stacks, snapshot, secrets)
 
+def deploy_cloudfront(stacks, snapshot, secrets, local=False, cloudfront_stacks = None):
+    deploy = deploy_stack_local if local else deploy_stack_s3
+    deploy('cloudfront-deployment',
+           "cloudfront.yaml",
+           ['S3BucketProofsName'],
+           stacks, snapshot, secrets, cloudfront_stacks = cloudfront_stacks)
+    cloudfront_stacks.wait_for_stable_stacks(['cloudfront-deployment'])
+    if not cloudfront_stacks.successful_stacks(['cloudfront-deployment']):
+        print("Stacks not successful: {}".format(stacks))
+        return False
+
+    return True
+
+def deploy_s3_proofs(stacks, snapshot, secrets, local=False):
+    deploy = deploy_stack_local if local else deploy_stack_s3
+    deploy('s3Proofs',
+           "s3_proofs.yaml",
+           ['S3BucketSuffix'],
+           stacks, snapshot, secrets)
+    stacks.wait_for_stable_stacks(['s3Proofs'])
+    if not stacks.successful_stacks(['s3Proofs']):
+        print("Stacks not successful: {}".format(stacks))
+        return False
+
+    return True
+
 def deploy_alarms_build(stacks, snapshot, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('alarms-build',
@@ -268,7 +305,7 @@ def deploy_alarms_build(stacks, snapshot, secrets, local=False):
             'BuildCBMCLinuxPipeline'],
            stacks, snapshot, secrets)
 
-def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
+def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False, cloudfront_url = None):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('github',
            "github.yaml",
@@ -277,8 +314,9 @@ def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=F
             'ProjectName',
             'SnapshotID',
             'GitHubRepository',
+            'CloudFrontUrl',
             'GitHubBranchName'],
-           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
+           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket, cloudfront_url=cloudfront_url)
 
 
 def deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
@@ -379,13 +417,13 @@ def deploy_build(stacks, snapshot, secrets, local=False):
 
 ################################################################
 
-def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
+def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, cloudfront_url = None, local=False):
     stks = ['github']
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local)
+    deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local=local, cloudfront_url=cloudfront_url)
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
         print("Stacks not successful: {}".format(stks))
@@ -480,12 +518,24 @@ def main():
         if not deploy_build(stacks, snapshot, secrets, args.local):
             return False
     if args.prod:
-        if not deploy_prod(stacks, snapshot, secrets, build_tools_bucket, args.local):
+        if args.cloudfront:
+            east_session = boto3.session.Session(profile_name=args.cloudfront)
+            east_stacks = stackst.Stacks(east_session)
+            cloudfront_url = east_stacks.get_output("CloudFrontUrl")
+
+        if not deploy_prod(stacks, snapshot, secrets, build_tools_bucket, cloudfront_url=cloudfront_url, local=args.local):
+            return False
+        account_id = session.client('sts').get_caller_identity()['Account']
+        # chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
+    if args.cloudfront:
+        east_session = boto3.session.Session(profile_name=args.cloudfront)
+        east_stacks = stackst.Stacks(east_session)
+        if not deploy_cloudfront(stacks, snapshot, secrets, args.local, cloudfront_stacks = east_stacks):
             return False
 
-        account_id = session.client('sts').get_caller_identity()['Account']
-        chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
-
+    if args.s3_proofs:
+        if not deploy_s3_proofs(stacks, snapshot, secrets, args.local):
+            return False
     return True
 
 if __name__ == "__main__":

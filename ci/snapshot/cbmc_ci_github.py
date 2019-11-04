@@ -11,15 +11,18 @@ import github
 
 from cbmc_ci_timer import Timer
 
-def update_github_status(repo_id, sha, status, ctx, desc, jobname):
+def update_github_status(repo_id, sha, status, ctx, desc, jobname, target_url=None):
     kwds = {'state': status,
             'context': "CBMC Batch: " + ctx,
             'description': desc}
     if jobname:
-        kwds['target_url'] = (
-            "https://s3.console.aws.amazon.com/s3/buckets/{}/{}/out/"
-            .format(os.environ['S3_BUCKET_PROOFS'], jobname)
-            )
+        if target_url:
+            kwds['target_url'] = "https://{}".format(target_url)
+        else:
+            kwds['target_url'] = (
+                "https://s3.console.aws.amazon.com/s3/buckets/{}/{}/out/"
+                .format(os.environ['S3_BUCKET_PROOFS'], jobname)
+                )
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')
     if updating and updating.strip().lower() == 'true':
@@ -44,7 +47,7 @@ def get_github_personal_access_token():
     return str(json.loads(s['SecretString'])[0]['GitHubPAT'])
 
 
-def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric):
+def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric, target_url = None):
     """Update GitHub Status
 
     Relevant documentation:
@@ -79,7 +82,7 @@ def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric):
     timer = Timer("Updating GitHub status {} with description {}".format(
         status, desc))
     try:
-        update_github_status(repo_id, sha, status, ctx, desc, jobname)
+        update_github_status(repo_id, sha, status, ctx, desc, jobname, target_url = target_url)
         cloudwatch.put_metric_data(
             MetricData=[
                 {

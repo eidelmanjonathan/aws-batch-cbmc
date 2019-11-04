@@ -5,6 +5,7 @@
 
 import os
 import argparse
+import re
 import subprocess
 import logging
 import datetime
@@ -326,12 +327,45 @@ def generate_cbmc_makefiles(group_names, root):
 ################################################################
 # CBMC Batch
 
-def generate_cbmc_jobs(src, repo_id, repo_sha, is_draft, tarfile):
+def get_most_recent_run_id(bucket, sha):
+    prefix = "pending_files/{}".format(sha)
+    s3 = boto3.client('s3')
+    response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+    print("List objects returned: {}".format(response))
+    if not response:
+        return 0
+    try:
+        keys = [object['Key'] for object in response['Contents']]
+    except Exception:
+        keys = []
+    run_ids = set()
+    for key in keys:
+        results = re.search(prefix + "/\d*/", key)
+        if results:
+            id = results.group(0).replace(prefix, "")
+            id = id[:len(id)-1]
+            id = id[1:]
+            run_ids.add(int(id))
+    print("Run ids: {}".format(run_ids))
+    if not run_ids:
+        return 0
+    return max(run_ids)
+
+
+
+def write_pending_file(bucket, jobname, sha, id):
+    logging.info("Creating pending status file for: %s with sha: %s", jobname, sha)
+    s3 = boto3.client('s3')
+    key = "pending_files/{}/{}/{}".format(sha, id, jobname)
+    s3.put_object(Bucket=bucket, Key=key, Body="Pending")
+
+def generate_cbmc_jobs(bucket, src, repo_id, repo_sha, is_draft, tarfile):
     # Find (proof-name, proof-directory) pairs for all proofs under src
     tasks = find_tasks(PROOF_MARKERS, src)
     print("{} tasks found".format(len(tasks)))
+    id = get_most_recent_run_id(bucket, repo_sha)
 
-    for (proofname, proofdir) in tasks:
+    for (proofname, proofdir) in tasks[:4]:
         # pylint: disable=broad-except
         try:
             # Try to run batch
@@ -340,6 +374,7 @@ def generate_cbmc_jobs(src, repo_id, repo_sha, is_draft, tarfile):
             cbmc_ci_start.batch_bookkeep(
                 ".", repo_id, repo_sha, is_draft, expected, proofname,
                 jobname)
+            write_pending_file(bucket, jobname, repo_sha, id + 1)
         except Exception as e:
             # Update commit status to error
             traceback.print_exc()
@@ -364,7 +399,7 @@ def source_prepare():
     generate_cbmc_makefiles(PROOF_MARKERS, base_name)
     generate_tarfile(arg.tarfile_name, base_name)
     upload_tarfile_to_s3(arg.tarfile_name, arg.bucket_proofs, arg.tarfile_path)
-    generate_cbmc_jobs(
+    generate_cbmc_jobs(arg.bucket_proofs,
         base_name, arg.id, arg.sha, arg.is_draft, arg.tarfile_name)
 
 ################################################################

@@ -268,8 +268,8 @@ def batch_bookkeep(
     bookkeep(tmp_dir, batch_name, expected, "expected.txt")
     # Update commit status to pending
     desc = "Verification Pending: CBMC Batch job " + batch_name
-    cbmc_ci_github.update_status(
-        "pending", subdir, batch_name, desc, repo_id, sha, False)
+    # cbmc_ci_github.update_status(
+    #     "pending", subdir, batch_name, desc, repo_id, sha, False)
 
 
 def expected_result(yaml):
