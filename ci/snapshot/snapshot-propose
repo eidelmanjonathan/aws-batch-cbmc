@@ -34,8 +34,8 @@ class Pkg(enum.Enum):
 class Act(enum.Enum):
     """The accounts used to propose a snapshot"""
     build = enum.auto()
-    beta = enum.auto()
-    prod = enum.auto()
+    profile = enum.auto()
+    promote_from = enum.auto()
 
 ################################################################
 # Argument parsing
@@ -47,22 +47,18 @@ def create_parser():
 
     arg.add_argument('--profile',
                      metavar='PROFILE',
-                     help='The AWS account profile (the default for beta, prod, build).'
+                     help='The AWS account profile we are targeting'
                     )
 
-    arg.add_argument('--beta-profile',
+    arg.add_argument('--promote-from',
                      metavar='PROFILE',
-                     help='The AWS account profile for the beta account.'
-                    )
-    arg.add_argument('--prod-profile',
-                     metavar='PROFILE',
-                     help='The AWS account profile for the prod account.'
-                    )
+                     help='The AWS account profile that we are promoting from (if any)')
+
     arg.add_argument('--build-profile',
                      metavar='PROFILE',
                      help="""
-                     The AWS account profile for the build account
-                     (defaults to prod account)."""
+                     The AWS account profile for the build account. This can be the same as the target account
+                     (defaults to target account)."""
                     )
 
     arg.add_argument('--cbmc-sha',
@@ -133,25 +129,11 @@ def create_parser():
 def set_argument_defaults(args):
     logging.info('Found --profile: %s', args.profile)
     logging.info('Found --build-profile: %s', args.build_profile)
-    logging.info('Found --beta-profile: %s', args.beta_profile)
-    logging.info('Found --prod-profile: %s', args.prod_profile)
 
-    if args.profile:
-        if args.beta_profile or args.prod_profile:
-            raise UserWarning("Use --profile or "
-                              "use --beta-profile and --prod-profile.")
-        args.beta_profile = args.profile
-        args.prod_profile = args.profile
-    else:
-        if not (args.beta_profile and args.prod_profile):
-            raise UserWarning("Use --profile or "
-                              "use --beta-profile and --prod-profile.")
     if not args.build_profile:
-        args.build_profile = args.prod_profile
+        args.build_profile = args.profile
 
     logging.info('Using --build-profile: %s', args.build_profile)
-    logging.info('Using --beta-profile: %s', args.beta_profile)
-    logging.info('Using --prod-profile: %s', args.prod_profile)
     return args
 
 def parse_args():
@@ -192,13 +174,16 @@ def aws_resources(args):
         accounts[account] = profiles[profile]
 
     make_profile_resources(args.build_profile, build_account=True)
-    make_profile_resources(args.beta_profile)
-    make_profile_resources(args.prod_profile)
+    make_profile_resources(args.profile)
+    if args.promote_from:
+        make_profile_resources(args.promote_from)
     logging.debug('Profile resources: %s', profiles)
 
     make_account_resources(Act.build, args.build_profile)
-    make_account_resources(Act.beta, args.beta_profile)
-    make_account_resources(Act.prod, args.prod_profile)
+    make_account_resources(Act.profile, args.profile)
+    if args.promote_from:
+        make_account_resources(Act.promote_from, args.promote_from)
+
     logging.info('Account resources: %s', accounts)
 
     return accounts
@@ -338,13 +323,9 @@ def tool_shas_beta_current(s3, cf, bkt, ecr=None):
         Tool.viewer: get_sha(snapshot['viewer'])
     }
 
-def tool_shas(args, build, beta):
-    if args.profile:
-        logging.info('Using build last tools')
-        shas = tool_shas_build_last(**build)
-    else:
-        logging.info('Using beta current tools')
-        shas = tool_shas_beta_current(**beta)
+def tool_shas(args, build):
+    logging.info('Using build last tools')
+    shas = tool_shas_build_last(**build)
 
     if args.cbmc_sha:
         logging.info('Overriding cbmc tool')
@@ -359,8 +340,8 @@ def tool_shas(args, build, beta):
     logging.info('Tool SHAs: %s', shas)
     return shas
 
-def update_shas(args, build, beta):
-    tools = tool_shas(args, build, beta)
+def update_shas(args, build):
+    tools = tool_shas(args, build)
 
     shas = {
         Pkg.cbmc: args.cbmc_sha or tools[Tool.cbmc],
@@ -408,9 +389,12 @@ def update_pkgs(args, sha, s3, ecr, bkt, cf=None):
 
 def propose(args, resources):
 
-    shas = update_shas(args, resources[Act.build], resources[Act.beta])
+    shas = update_shas(args, resources[Act.build])
     pkgs = update_pkgs(args, shas, **resources[Act.build])
-    current_snapshot_id = get_current_snapshot_id(resources[Act.prod]["cf"])
+    if args.promote_from is not None:
+        current_snapshot_id = get_current_snapshot_id(resources[Act.promote_from]["cf"])
+    else:
+        current_snapshot_id = get_current_snapshot_id(resources[Act.profile]["cf"])
     build_snapshot = json.loads(get_current_snapshot_json(resources[Act.build]["s3"], resources[Act.build]["bkt"], current_snapshot_id=current_snapshot_id))
     build_snapshot['cbmc'] = pkgs[Pkg.cbmc] or build_snapshot['cbmc']
     build_snapshot['batch'] = pkgs[Pkg.batch] or build_snapshot['batch']
@@ -425,7 +409,7 @@ def propose(args, resources):
     return build_snapshot
 
 def initial(args, resources):
-    shas = update_shas(args, resources[Act.build], resources[Act.beta])
+    shas = update_shas(args, resources[Act.build])
     pkgs = update_pkgs(args, shas, **resources[Act.build])
     prod = {'parameters': {}}
     prod['cbmc'] = pkgs[Pkg.cbmc] or prod.get('cbmc')
@@ -448,11 +432,11 @@ def main():
     resources = aws_resources(args)
 
     if args.show_current_snapshot:
-        print(get_current_snapshot_json(**resources[Act.prod]))
+        print(get_current_snapshot_json(**resources[Act.profile]))
         sys.exit()
 
     if args.show_last_snapshot:
-        print(get_last_snapshot_json(**resources[Act.prod], count=args.show_last_snapshot))
+        print(get_last_snapshot_json(**resources[Act.profile], count=args.show_last_snapshot))
         sys.exit()
 
     if args.initial:

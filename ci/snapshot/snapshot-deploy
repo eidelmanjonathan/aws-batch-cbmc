@@ -68,7 +68,9 @@ def create_parser():
     return arg
 
 ################################################################
-
+UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
+                              "There should only be one statement. Bucket policy should only be updated " \
+                              "with CloudFormation template. Aborting!"
 def get_value(name, stacks, snapshot, secrets):
     if name == 'GitHubToken':
         name = 'GitHubCommitStatusPAT'
@@ -433,6 +435,37 @@ def chime_notification(user, snapshot_id, account_id, profile):
             .format(user, snapshot_id, account_id, profile)}
     requests.post(webhook, data=json.dumps(data), headers=headers)
 
+
+def get_allowed_accounts(s3_client, bucket_name):
+    """
+    Gets the AWS accounts that have read access to this S3 bucket. We are assuming that changes have only been made
+    using these scripts and the CloudFormation template. If anything looks like it was changed manually, we fail
+    :param s3_client:
+    :param bucket_name:
+    :return: Account IDs that currently have read access to the bucket
+    """
+    try:
+        result = s3_client.get_bucket_policy(Bucket=bucket_name)
+    #FIXME: I couldn't seem to import the specific exception here
+    except Exception:
+        print("Could not find an existing bucket policy. Creating a new one")
+        return []
+    policy_json = json.loads(result["Policy"])
+
+    if len(policy_json["Statement"]) > 1:
+        raise Exception(UNEXPECTED_POLICY_MSG)
+
+    policy = policy_json["Statement"][0]["Principal"]["AWS"]
+    action = policy_json["Statement"][0]["Action"]
+    if set(action) != {"s3:GetObject", "s3:ListBucket"}:
+        raise Exception(UNEXPECTED_POLICY_MSG)
+
+    if isinstance(policy, list):
+        account_ids = list(map(lambda a: a.replace("arn:aws:iam::", "").replace(":root", ""), policy))
+    else:
+        account_ids = [policy.replace("arn:aws:iam::", "").replace(":root", "")]
+    return account_ids
+
 def main():
     args = create_parser().parse_args()
 
@@ -450,12 +483,15 @@ def main():
         build_tools_bucket = build_stacks.get_output("S3BucketName")
         key = "snapshot/snapshot-{}/{}".format(snapshot_id, snapshot_file)
         print(build_tools_bucket, key, snapshot_file)
-        build_session.client('s3').download_file(Bucket=build_tools_bucket, Key=key, Filename=snapshot_file)
+        build_s3_client = build_session.client('s3')
+        build_s3_client.download_file(Bucket=build_tools_bucket, Key=key, Filename=snapshot_file)
         snapshot = snapshott.Snapshot(filename=snapshot_file)
         args.local = False
         if args.proof_account_ids:
             build_secrets = secretst.Secrets(build_session)
-            if not deploy_policy(build_stacks, snapshot, build_secrets, build_tools_bucket, args.proof_account_ids, args.local):
+            all_allowed_proof_accounts = get_allowed_accounts(build_s3_client, build_tools_bucket)
+            all_allowed_proof_accounts.extend(args.proof_account_ids)
+            if not deploy_policy(build_stacks, snapshot, build_secrets, build_tools_bucket, all_allowed_proof_accounts, args.local):
                 return False
 
     # If we are setting up the build account itself, we only need to reference the build account

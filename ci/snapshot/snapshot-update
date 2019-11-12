@@ -30,18 +30,14 @@ def create_parser():
                      metavar='PROFILE',
                      help='The AWS account profile (the default for beta, prod, build).'
                     )
+
+    arg.add_argument('--promote-from',
+                     metavar='PROFILE',
+                     help='The AWS account profile that we want to promote from')
     arg.add_argument('--proof-account-ids',
                      metavar='ID',
                      nargs="+",
                      help="The account IDs that we need to grant read access to the build tools account")
-    arg.add_argument('--beta-profile',
-                     metavar='PROFILE',
-                     help='The AWS account profile for the beta account.'
-                    )
-    arg.add_argument('--prod-profile',
-                     metavar='PROFILE',
-                     help='The AWS account profile for the prod account.'
-                    )
     arg.add_argument('--build-profile',
                      metavar='PROFILE',
                      help="""
@@ -137,12 +133,11 @@ def snapshot_propose_args(args):
     """Pass relevant arguments to snapshot-propose."""
     options = {
         '--profile': args.profile,
-        '--beta-profile': args.beta_profile,
-        '--prod-profile': args.prod_profile,
         '--build-profile': args.build_profile,
         '--cbmc-sha': args.cbmc_sha,
         '--batch-sha': args.batch_sha,
-        '--viewer-sha': args.viewer_sha
+        '--viewer-sha': args.viewer_sha,
+        '--promote-from': args.promote_from
     }
     booleans = {
         '--no-cbmc-update': args.no_cbmc_update,
@@ -233,7 +228,7 @@ def update_and_write_snapshot(package_filenames, snapshot):
 
 def main():
     args = parse_args()
-    profile = args.profile or args.prod_profile
+    profile = args.profile
     build_profile = args.build_profile
 
     # If we want to set up the shared build account for the first time
