@@ -25,7 +25,7 @@ Parameters:
 
   S3BucketSuffix:
     Type: String
-    Default: "proofs"
+    Default: "proofs2"
     Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
 
 Resources:
