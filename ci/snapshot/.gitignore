@@ -1,4 +1,6 @@
 *.zip
 snapshot-*-*
 snapshot.json
+parameters.json
 __pycache__
+project-params-*-*

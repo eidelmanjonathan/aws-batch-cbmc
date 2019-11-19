@@ -405,6 +405,10 @@ def propose(args, resources):
     del build_snapshot['parameters']['ImageTagSuffix']
     del build_snapshot['parameters']['SnapshotID']
 
+    # If we are promoting a snapshot from one account to another, we need to know the snapshot ID
+    if args.promote_from is not None:
+        build_snapshot['parameters']['SnapshotID'] = current_snapshot_id
+
     logging.info('Proposing snapshot: %s', build_snapshot)
     return build_snapshot
 
