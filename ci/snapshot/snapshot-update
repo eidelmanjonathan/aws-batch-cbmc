@@ -49,10 +49,13 @@ def create_parser():
                      help='Updating a production account.'
                     )
 
-    arg.add_argument('--is-init',
+    arg.add_argument('--init-build-account',
                      action='store_true',
-                     help='Use flag if this is the first time deploying build account')
-
+                     help='Use flag if this is the first time deploying build account and the proof account')
+    arg.add_argument('--init-proof-account',
+                     action='store_true',
+                     help='Use flag if this is the first time deploying proof account but the build'
+                          ' account is already deployed')
 
     arg.add_argument('--cbmc-sha',
                      metavar='SHA',
@@ -230,18 +233,23 @@ def main():
     args = parse_args()
     profile = args.profile
     build_profile = args.build_profile
+    session = boto3.session.Session(profile_name=build_profile)
+    build_s3_client = session.client("s3")
+    build_ecr_client = session.client("ecr")
+    snapshot = snapshott.Snapshot(filename="snapshot.json")
+
+    if args.init_build_account and args.init_proof_account:
+        raise Exception("Please choose only one, init-build-account or init-proof-account. If you are initializing"
+                        " both accounts, use --init-build-account")
 
     # If we want to set up the shared build account for the first time
-    if args.is_init:
-        snapshot = snapshott.Snapshot(filename="snapshot.json")
+    if args.init_build_account:
         cmd = './snapshot-deploy --profile {} --doit --globals --snapshot snapshot.json'
         run(cmd.format(build_profile))
         cmd = './snapshot-deploy --profile {} --build --snapshot snapshot.json'
         run(cmd.format(build_profile))
         session = boto3.session.Session(profile_name=build_profile)
         pipeline_client = session.client("codepipeline")
-        build_s3_client = session.client("s3")
-        build_ecr_client = session.client("ecr")
         wait_for_pipeline_completion("Build-CBMC-Linux-Pipeline", pipeline_client)
         wait_for_pipeline_completion("Build-Docker-Pipeline", pipeline_client)
         wait_for_pipeline_completion("Build-Viewer-Pipeline", pipeline_client)
@@ -249,20 +257,31 @@ def main():
         package_filenames = get_package_filenames_from_s3(build_s3_client, build_ecr_client)
         update_and_write_snapshot(package_filenames, snapshot)
 
-    # Otherwise we should propose the most recent snapshot
+    # If we are creating a brand new proof account (with an existing build account), just take all the
+    # newest builds from the build account
+    elif args.init_proof_account:
+        package_filenames = get_package_filenames_from_s3(build_s3_client, build_ecr_client)
+        update_and_write_snapshot(package_filenames, snapshot)
+
+    # Otherwise we should propose the most recent snapshot. If we are promoting an account, snapshot will include
+    # snapshot ID we need to promote
     else:
         cmd = './snapshot-propose ' + " ".join(snapshot_propose_args(args))
         output = run(cmd)
         write_snapshot_json(output)
 
+    # If we are promoting an account, the snapshot is already built, otherwise build it
+    if args.promote_from:
+        snapshot = snapshott.Snapshot(filename="snapshot.json")
+        sid = snapshot.get_parameter("SnapshotID")
+    else:
+        cmd = './snapshot-create --profile {} --snapshot snapshot.json'
+        output = run(cmd.format(build_profile))
+        sid = parse_snapshot_id(output)
 
+        cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
+        run(cmd.format(build_profile, sid))
 
-    cmd = './snapshot-create --profile {} --snapshot snapshot.json'
-    output = run(cmd.format(build_profile))
-    sid = parse_snapshot_id(output)
-
-    cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
-    run(cmd.format(build_profile, sid))
     if args.proof_account_ids:
         cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --proof-account-ids {}'
         run(cmd.format(profile, build_profile, sid, " ".join(args.proof_account_ids)))

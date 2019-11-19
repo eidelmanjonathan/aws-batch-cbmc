@@ -124,37 +124,41 @@ Many different Proof accounts (Beta, Prod, Development) can share the same Tool 
   build-globals.yaml and github.yaml like GitHubBranchName.  At the moment, the first three
   are required, and "BatchCodeCommitBranchName" must be set to "snapshot".
   ProjectName cannot contain a space or other "illegal" characters.
+  
 
 * If you are setting up both a completely new shared tool building account and a proof account, and the proof account already has read access in the build account's S3 bucket policy, run the following command:
 
-        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --is-init
+        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --init-build-account
 
-* If you are using an existing tool building account, and are setting up a proof account, and the proof account already has read access in the build account's S3 bucket policy, run the following command:
+* If you are using an existing tool building account, and are setting up a brand new proof account, and the proof account already has read access in the build account's S3 bucket policy, run the following command:
         
+        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --init-proof-account
+        
+* If you would like to propose and create a new, updated snapshot in the build account, and then use that snapshot in the proof account, run the following command:
+
         snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE
 
-* If the proof account does not have read access to build account's S3 bucket, add the following flag to either command
+* If you are promoting an existing proof account snapshot to a new proof account, using the same shared tools account, use the following command:
+
+		snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --promote-from $SOURCE-PROFILE
+
+* If the proof account does not have read access to build account's S3 bucket, add the following flag to any of the previous commands
 
         --proof-account-ids ACCOUNT_ID
+
+* If you would like the account to post results to github, add the flag
+		--is-prod
 
 This will add read access for the proof account to the bucket policy of the shared tool account
 
 
-Note that the build account must have write access even to the shared build account, because we save a snapshot in the
-shared S3 bucket.
+The intention is that we would first run snapshot-update with --init-build-account flag, which would build all the globals in the shared tools account, create a new snapshot in the build account, and deploy that snapshot in the proof account.
 
-* Create CodeCommit replications of the CBMC-batch and CBMC-coverage
-  GitFarm repositories at
+Next, if we needed to initialize a new proof account to share the build account we would use the --init-proof-account flag which would create a new snapshot in the build account and deploy it in the proof account.
 
-        https://code.amazon.com/packages/CBMC-batch/replicas
-        https://code.amazon.com/packages/CBMC-coverage/replicas
+If we want to propose and deploy and updated snapshot for an existing proof account (that has github.yaml deployed), can run snapshot-update without extra flags.
 
-  respectively with ARN
-
-        arn:aws:iam::AWS_ACCOUNT_ID:role/picapica-role
-
-  and repository names CBMC-batch and CBMC-coverage respectively.
-
+Finally, to promote a snapshot from one account to another, we use --promote-from which takes the source account as an argument. This does not build a new snapshot
 
 * Configure the web hook on GitHub. The required ID is the id listed by
 
@@ -231,56 +235,6 @@ CBMC Batch on that commit.  If this is the first time you are testing
 the canary, you will have to configure a test first: just click on "configure
 test events" to see the HelloWorld test event, fill in the event name with "HelloWorld",
 and click on create.
-
-Making a change to CBMC Batch in continuous integration
---------------------------------------------------------
-
-Let's assume you have a working continuous integration deployment,
-you have pushed a change to CBMC Batch,
-and now want to push it into the continuous integration deployment.
-
-Push the change to the CBMC Batch repository.
-
-Go to CodeBuild -> Build history and wait until Build-Batch-Project
-and Build-Docker-Project are done.  The docker will take about 10 minutes.
-
-```
-snapshot-deploy --profile $PROFILE --doit --globals --snapshot snapshot.json
-snapshot-deploy --profile $PROFILE --build --snapshot snapshot.json
-snapshot-create --profile $PROFILE --snapshot snapshot.json
-snapshot-deploy --profile $PROFILE --prod --snapshotid YYYYMMDD-HHMMSS
-```
-
-Migrate a beta account to the prod account
-------------------------------------------
-
-This section describes how to move a snapshot from a beta account where
-the snapshot has been developed and debugged to a production account where
-the actual continuous integration is happening.
-
-Set $BETA and $PROD to the profile names of the beta and production accounts.
-Then do
-
-```
-snapshot-propose --beta $BETA --prod $PROD > snapshot.json
-snapshot-create --profile $PROD --snapshot snapshot.json
-snapshot-deploy --profile $PROD --prod --snapshotid YYYYMMDD-HHMMSS
-```
-
-Consider some clean up steps with the old $PROD account:
-
-* Change the email and name of the old account (add "-delete") and
-  move the account into the group "Padstone/Delete"
-
-* Delete the PicaPica replication for the old account under CBMC-Batch and
-  CBMC-Coverage (the account name should have changed to the string including
-  "-delete" and be easy to spot).
-
-* Delete or disable the webhook for the old account on GitHub.
-
-* Create a new beta account following the instructions above.
-
-* Update .aws/config with the new account numbers.
 
 Replacing the production proof account with another account
 -----------------------------------------------------------
