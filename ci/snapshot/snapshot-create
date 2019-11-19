@@ -26,6 +26,10 @@ def create_parser():
                      metavar='NAME',
                      help='AWS account profile name'
                     )
+
+    arg.add_argument('--build-profile',
+                     metavar='NAME',
+                     help='AWS account build profile name')
     arg.add_argument('--snapshot',
                      metavar='FILE',
                      default='snapshot.json',
@@ -87,9 +91,12 @@ def extract_templates():
 def main():
     args = create_parser().parse_args()
 
-    session = boto3.session.Session(profile_name=args.profile)
-    stacks = stackst.Stacks(session)
-    s3client = session.client('s3')
+    proof_session = boto3.session.Session(profile_name=args.profile) if args.profile else None
+    build_session = boto3.session.Session(profile_name=args.build_profile)
+    proof_stacks = stackst.Stacks(proof_session) if args.profile else None
+    build_stacks =  stackst.Stacks(build_session)
+    proof_s3client = proof_session.client('s3') if args.profile else None
+    build_s3client = build_session.client('s3')
 
     snapshot = snapshott.Snapshot(filename=args.snapshot)
 
@@ -100,12 +107,15 @@ def main():
     os.mkdir(snapshot_dir)
     os.chdir(snapshot_dir)
 
-    bucket = stacks.get_output('S3BucketName')
-    get_cbmc_tarfile(s3client, bucket, snapshot.get_cbmc())
-    get_batch_tarfile(s3client, bucket, snapshot.get_batch())
-    get_viewer_tarfile(s3client, bucket, snapshot.get_viewer())
-    get_lambda_tarfile(s3client, bucket, snapshot.get_lambda())
-    get_templates_tarfile(s3client, bucket, snapshot.get_templates())
+    build_bucket = build_stacks.get_output("S3BucketName")
+    proof_bucket = proof_stacks.get_output("S3BucketProofs") if args.profile else None
+
+    # Download build files from build account
+    get_cbmc_tarfile(build_s3client, build_bucket, snapshot.get_cbmc())
+    get_batch_tarfile(build_s3client, build_bucket, snapshot.get_batch())
+    get_viewer_tarfile(build_s3client, build_bucket, snapshot.get_viewer())
+    get_lambda_tarfile(build_s3client, build_bucket, snapshot.get_lambda())
+    get_templates_tarfile(build_s3client, build_bucket, snapshot.get_templates())
     extract_templates()
 
     docker = snapshot.get_docker()
@@ -117,11 +127,13 @@ def main():
     print("Writing {}".format(snapshot_file))
     snapshot.write(snapshot_file)
 
-    print("Uploading snapshot to s3://{}/snapshot/{}".
-          format(bucket, snapshot_dir))
-    for filename in os.listdir('.'):
-        s3client.upload_file(Filename=filename, Bucket=bucket,
-                             Key='snapshot/{}/{}'.format(snapshot_dir, filename))
+    # If we have a profile, we upload the snapshot, otherwise we just keep it locally
+    if args.profile:
+        print("Uploading snapshot to s3://{}/snapshot/{}".
+              format(proof_bucket, snapshot_dir))
+        for filename in os.listdir('.'):
+            proof_s3client.upload_file(Filename=filename, Bucket=proof_bucket,
+                                 Key='snapshot/{}/{}'.format(snapshot_dir, filename))
 
 if __name__ == "__main__":
     main()

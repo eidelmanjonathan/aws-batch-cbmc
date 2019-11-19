@@ -391,11 +391,8 @@ def propose(args, resources):
 
     shas = update_shas(args, resources[Act.build])
     pkgs = update_pkgs(args, shas, **resources[Act.build])
-    if args.promote_from is not None:
-        current_snapshot_id = get_current_snapshot_id(resources[Act.promote_from]["cf"])
-    else:
-        current_snapshot_id = get_current_snapshot_id(resources[Act.profile]["cf"])
-    build_snapshot = json.loads(get_current_snapshot_json(resources[Act.build]["s3"], resources[Act.build]["bkt"], current_snapshot_id=current_snapshot_id))
+    current_snapshot_id = get_current_snapshot_id(resources[Act.profile]["cf"])
+    build_snapshot = json.loads(get_current_snapshot_json(resources[Act.profile]["s3"], resources[Act.profile]["bkt"], current_snapshot_id=current_snapshot_id))
     build_snapshot['cbmc'] = pkgs[Pkg.cbmc] or build_snapshot['cbmc']
     build_snapshot['batch'] = pkgs[Pkg.batch] or build_snapshot['batch']
     build_snapshot['templates'] = pkgs[Pkg.template] or build_snapshot['templates']
@@ -404,10 +401,6 @@ def propose(args, resources):
     build_snapshot['viewer'] = pkgs[Pkg.viewer] or build_snapshot['viewer']
     del build_snapshot['parameters']['ImageTagSuffix']
     del build_snapshot['parameters']['SnapshotID']
-
-    # If we are promoting a snapshot from one account to another, we need to know the snapshot ID
-    if args.promote_from is not None:
-        build_snapshot['parameters']['SnapshotID'] = current_snapshot_id
 
     logging.info('Proposing snapshot: %s', build_snapshot)
     return build_snapshot
@@ -426,6 +419,18 @@ def initial(args, resources):
     logging.info('Proposing snapshot: %s', prod)
     return prod
 
+def propose_promote_snapshot(resources):
+    snapshot_id_for_source = get_current_snapshot_id(resources[Act.promote_from]["cf"])
+    source_snapshot = get_current_snapshot_json(resources[Act.promote_from]["s3"], resources[Act.promote_from]["bkt"],
+                                                current_snapshot_id=snapshot_id_for_source)
+    snapshot_id_for_target = get_current_snapshot_id(resources[Act.profile]["cf"])
+    target_snapshot = get_current_snapshot_json(resources[Act.profile]["s3"], resources[Act.profile]["bkt"],
+                                                current_snapshot_id=snapshot_id_for_target)
+    source_snapshot_json = json.loads(source_snapshot)
+    target_snapshot_json = json.loads(target_snapshot)
+    source_snapshot_json["parameters"] = target_snapshot_json["parameters"]
+    del source_snapshot_json["parameters"]["SnapshotID"]
+    return source_snapshot_json
 
 ################################################################
 
@@ -437,6 +442,12 @@ def main():
 
     if args.show_current_snapshot:
         print(get_current_snapshot_json(**resources[Act.profile]))
+        sys.exit()
+
+    # If we are promoting from one account to another, we take the package information from the source account
+    # and the parameters from the target
+    if args.promote_from:
+        print(json.dumps(propose_promote_snapshot(resources), indent=2))
         sys.exit()
 
     if args.show_last_snapshot:

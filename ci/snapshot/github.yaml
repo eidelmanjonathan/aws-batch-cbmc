@@ -4,8 +4,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
-  S3BucketToolsName:
-    Type: String
 
   BuildToolsAccountId:
     Type: String
@@ -23,21 +21,11 @@ Parameters:
     Type: String
     Default: ""
 
-  S3BucketSuffix:
+  S3BucketProofs:
     Type: String
-    Default: "proofs"
-    Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
+    Description: "Name of S3 bucket for proof account"
 
 Resources:
-
-  S3BucketProofs:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}"
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
 
   BatchLambdaRole:
     Type: AWS::IAM::Role
@@ -63,21 +51,17 @@ Resources:
               - Action:
                   - s3:GetObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketToolsName}", "*"]]
-              - Action:
-                  - s3:ListBucket
-                Effect: Allow
-                Resource: !Sub "arn:aws:s3:::${S3BucketToolsName}"
+                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketProofs}", "*"]]
 
               - Action:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
+                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketProofs}", "*"]]
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub "${S3BucketProofs.Arn}"
+                Resource: !Sub "arn:aws:s3:::${S3BucketProofs}"
               - Action:
                   - batch:DescribeJobQueues
                   - batch:DescribeJobDefinitions
@@ -105,7 +89,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        S3Bucket: !Ref S3BucketToolsName
+        S3Bucket: !Ref S3BucketProofs
         S3Key: !Sub "snapshot/snapshot-${SnapshotID}/lambda.zip"
       Handler: cbmc_ci_start.lambda_handler
       Role: !GetAtt BatchLambdaRole.Arn
@@ -115,14 +99,14 @@ Resources:
       Environment:
         Variables:
           PROJECT_NAME: !Ref ProjectName
-          S3_BKT: !Ref S3BucketToolsName
-          PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
+          S3_BKT: !Ref S3BucketProofs
+          PKG_BKT: !Sub "${S3BucketProofs}/snapshot/snapshot-${SnapshotID}"
 
   BatchStatusLambda:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        S3Bucket: !Ref S3BucketToolsName
+        S3Bucket: !Ref S3BucketProofs
         S3Key: !Sub "snapshot/snapshot-${SnapshotID}/lambda.zip"
       Handler: cbmc_ci_end.lambda_handler
       Role: !GetAtt BatchLambdaRole.Arn
@@ -131,9 +115,9 @@ Resources:
       Environment:
         Variables:
           PROJECT_NAME: !Ref ProjectName
-          S3_BKT: !Ref S3BucketToolsName
+          S3_BKT: !Ref S3BucketProofs
           S3_BUCKET_PROOFS: !Ref S3BucketProofs
-          PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
+          PKG_BKT: !Sub "${S3BucketProofs}/snapshot/snapshot-${SnapshotID}"
           CBMC_CI_UPDATING_STATUS: True
 
   BatchEventRule:
@@ -393,21 +377,21 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketToolsName}", "*"]]
+                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketProofs}", "*"]]
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub "arn:aws:s3:::${S3BucketToolsName}"
+                Resource: !Sub "arn:aws:s3:::${S3BucketProofs}"
 
               - Action:
                   - s3:GetObject
                   - s3:PutObject
                 Effect: Allow
-                Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
+                Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketProofs}", "*"]]
               - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub "${S3BucketProofs.Arn}"
+                Resource: !Sub "arn:aws:s3:::${S3BucketProofs}"
               - Action:
                   - secretsmanager:GetSecretValue
                 Effect: Allow
@@ -442,13 +426,13 @@ Resources:
         EnvironmentVariables:
           - Name: S3_BUCKET_TOOLS
             Type: PLAINTEXT
-            Value: !Ref S3BucketToolsName
+            Value: !Ref S3BucketProofs
           - Name: S3_BUCKET_PROOFS
             Type: PLAINTEXT
             Value: !Ref S3BucketProofs
           - Name: S3_BKT
             Type: PLAINTEXT
-            Value: !Ref S3BucketToolsName
+            Value: !Ref S3BucketProofs
           - Name: S3_PKG_PATH
             Type: PLAINTEXT
             Value: !Sub "snapshot/snapshot-${SnapshotID}"

@@ -1,0 +1,29 @@
+# Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  S3BucketSuffix:
+    Type: String
+    Default: "proofs"
+    Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
+
+Resources:
+
+  S3BucketProofs:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-${S3BucketSuffix}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+
+Outputs:
+
+  S3BucketProofs:
+    Value: !Ref S3BucketProofs
+    Export:
+      Name: S3BucketProofs

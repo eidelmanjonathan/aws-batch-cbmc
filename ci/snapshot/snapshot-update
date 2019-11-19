@@ -124,12 +124,12 @@ def parse_args():
 def run(string):
     print('Running: {}'.format(string))
     result = subprocess.run(string.split(),
-                            check=True, capture_output=True, text=True)
+                            capture_output=True, text=True)
     if result.stdout:
         print(result.stdout)
     if result.stderr:
         print(result.stderr)
-
+    result.check_returncode()
     return result.stdout
 
 def snapshot_propose_args(args):
@@ -229,6 +229,20 @@ def update_and_write_snapshot(package_filenames, snapshot):
 ################################################################
 #
 
+def initialize_build_account(build_profile, build_s3_client, build_ecr_client, snapshot):
+    cmd = './snapshot-deploy --profile {} --doit --globals --snapshot snapshot.json'
+    run(cmd.format(build_profile))
+    cmd = './snapshot-deploy --profile {} --build --snapshot snapshot.json'
+    run(cmd.format(build_profile))
+    session = boto3.session.Session(profile_name=build_profile)
+    pipeline_client = session.client("codepipeline")
+    wait_for_pipeline_completion("Build-CBMC-Linux-Pipeline", pipeline_client)
+    wait_for_pipeline_completion("Build-Docker-Pipeline", pipeline_client)
+    wait_for_pipeline_completion("Build-Viewer-Pipeline", pipeline_client)
+    wait_for_pipeline_completion("Build-Batch-Pipeline", pipeline_client)
+    package_filenames = get_package_filenames_from_s3(build_s3_client, build_ecr_client)
+    update_and_write_snapshot(package_filenames, snapshot)
+
 def main():
     args = parse_args()
     profile = args.profile
@@ -238,30 +252,21 @@ def main():
     build_ecr_client = session.client("ecr")
     snapshot = snapshott.Snapshot(filename="snapshot.json")
 
-    if args.init_build_account and args.init_proof_account:
-        raise Exception("Please choose only one, init-build-account or init-proof-account. If you are initializing"
-                        " both accounts, use --init-build-account")
-
     # If we want to set up the shared build account for the first time
     if args.init_build_account:
-        cmd = './snapshot-deploy --profile {} --doit --globals --snapshot snapshot.json'
-        run(cmd.format(build_profile))
-        cmd = './snapshot-deploy --profile {} --build --snapshot snapshot.json'
-        run(cmd.format(build_profile))
-        session = boto3.session.Session(profile_name=build_profile)
-        pipeline_client = session.client("codepipeline")
-        wait_for_pipeline_completion("Build-CBMC-Linux-Pipeline", pipeline_client)
-        wait_for_pipeline_completion("Build-Docker-Pipeline", pipeline_client)
-        wait_for_pipeline_completion("Build-Viewer-Pipeline", pipeline_client)
-        wait_for_pipeline_completion("Build-Batch-Pipeline", pipeline_client)
+        initialize_build_account(build_profile, build_s3_client, build_ecr_client, snapshot)
+
+    # If we are creating a brand new proof account, we need to bootstrap the process by initializing the S3 bucket
+    if args.init_proof_account:
         package_filenames = get_package_filenames_from_s3(build_s3_client, build_ecr_client)
         update_and_write_snapshot(package_filenames, snapshot)
 
-    # If we are creating a brand new proof account (with an existing build account), just take all the
-    # newest builds from the build account
-    elif args.init_proof_account:
-        package_filenames = get_package_filenames_from_s3(build_s3_client, build_ecr_client)
-        update_and_write_snapshot(package_filenames, snapshot)
+        cmd = './snapshot-create --build-profile {} --snapshot snapshot.json'
+        output = run(cmd.format(build_profile))
+        sid = parse_snapshot_id(output)
+
+        cmd = './snapshot-deploy --profile {} --build-profile {} --deploy-proof-s3-bucket --snapshotid {}'
+        run(cmd.format(profile, build_profile, sid))
 
     # Otherwise we should propose the most recent snapshot. If we are promoting an account, snapshot will include
     # snapshot ID we need to promote
@@ -270,24 +275,12 @@ def main():
         output = run(cmd)
         write_snapshot_json(output)
 
-    # If we are promoting an account, the snapshot is already built, otherwise build it
-    if args.promote_from:
-        snapshot = snapshott.Snapshot(filename="snapshot.json")
-        sid = snapshot.get_parameter("SnapshotID")
-    else:
-        cmd = './snapshot-create --profile {} --snapshot snapshot.json'
-        output = run(cmd.format(build_profile))
-        sid = parse_snapshot_id(output)
+    cmd = './snapshot-create --profile {} --build-profile {} --snapshot snapshot.json'
+    output = run(cmd.format(profile, build_profile))
+    sid = parse_snapshot_id(output)
 
-        cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
-        run(cmd.format(build_profile, sid))
-
-    if args.proof_account_ids:
-        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --proof-account-ids {}'
-        run(cmd.format(profile, build_profile, sid, " ".join(args.proof_account_ids)))
-    else:
-        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
-        run(cmd.format(profile, build_profile, sid))
+    cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
+    run(cmd.format(profile, build_profile, sid))
 
     cmd = './snapshot-variable --profile {} --operational'
     run(cmd.format(profile))

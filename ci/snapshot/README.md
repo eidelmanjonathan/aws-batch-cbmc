@@ -126,15 +126,15 @@ Many different Proof accounts (Beta, Prod, Development) can share the same Tool 
   ProjectName cannot contain a space or other "illegal" characters.
   
 
-* If you are setting up both a completely new shared tool building account and a proof account, and the proof account already has read access in the build account's S3 bucket policy, run the following command:
+* If you are setting up both a completely new shared tool building account and a proof account, run the following command:
 
-        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --init-build-account
+        snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --init-build-account --init-proof-account
 
-* If you are using an existing tool building account, and are setting up a brand new proof account, and the proof account already has read access in the build account's S3 bucket policy, run the following command:
+* If you are using an existing tool building account, and are setting up a brand new proof account, run the following command:
         
         snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --init-proof-account
         
-* If you would like to propose and create a new, updated snapshot in the build account, and then use that snapshot in the proof account, run the following command:
+* If you would like to propose and create a new, updated snapshot and then use that snapshot in the proof account, run the following command:
 
         snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE
 
@@ -142,9 +142,6 @@ Many different Proof accounts (Beta, Prod, Development) can share the same Tool 
 
 		snapshot-update --profile $PROOF-PROFILE --build-profile $BUILD-PROFILE --promote-from $SOURCE-PROFILE
 
-* If the proof account does not have read access to build account's S3 bucket, add the following flag to any of the previous commands
-
-        --proof-account-ids ACCOUNT_ID
 
 * If you would like the account to post results to github, add the flag
 		--is-prod
@@ -152,13 +149,16 @@ Many different Proof accounts (Beta, Prod, Development) can share the same Tool 
 This will add read access for the proof account to the bucket policy of the shared tool account
 
 
-The intention is that we would first run snapshot-update with --init-build-account flag, which would build all the globals in the shared tools account, create a new snapshot in the build account, and deploy that snapshot in the proof account.
+The intention is that we would first run snapshot-update with --init-build-account and --init-proof-account flags, which would build all the globals in the shared tools account, create a new snapshot in the proof account, and deploy that snapshot in the proof account.
 
-Next, if we needed to initialize a new proof account to share the build account we would use the --init-proof-account flag which would create a new snapshot in the build account and deploy it in the proof account.
+Next, if we needed to initialize a new proof account to share the build account we would use the --init-proof-account flag which would create a new snapshot in the proof account and deploy it in the proof account.
 
-If we want to propose and deploy and updated snapshot for an existing proof account (that has github.yaml deployed), can run snapshot-update without extra flags.
+If we want to propose and deploy and updated snapshot for an existing proof account (which already has its S3 bucket deployed), we can run snapshot-update without any extra flags.
 
-Finally, to promote a snapshot from one account to another, we use --promote-from which takes the source account as an argument. This does not build a new snapshot
+Finally, to promote a snapshot from one account to another, we use --promote-from which takes the source account as an argument. This builds a new snapshot in the target account that has the same packages as the source account
+
+TODO: For now we must manually give permissions for ECR images to be publicly readable from the shared build account. In the future we should automate this,
+and we should give finer grained permissions in case we eventually have images that are not open source
 
 * Configure the web hook on GitHub. The required ID is the id listed by
 
