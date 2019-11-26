@@ -1,5 +1,13 @@
 # Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+# Example of expected values:
+# {
+#     "ProjectName": "MQTT-Beta2",
+#     "NotificationAddress": "jeid@amazon.com",
+#     "SIMAddress": "jeid@amazon.com",
+#     "GitHubRepository": "eidelmanjonathan/amazon-freertos",
+#     "ViewerRepositoryOwner": "markrtuttle"
+#   }
 
 import json
 

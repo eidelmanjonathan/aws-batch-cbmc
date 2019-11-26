@@ -5,13 +5,6 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
 
-  GitHubRepository:
-    Type: String
-
-  GitHubBranchName:
-    Type: String
-    Default: "master"
-
   BatchRepositoryOwner:
     Type: String
     Default: awslabs
@@ -57,15 +50,6 @@ Outputs:
     Value: !Ref S3Bucket
     Export:
       Name: S3BucketName
-
-  GitHubRepository:
-    Value: !Ref GitHubRepository
-    Export:
-      Name: GitHubRepository
-  GitHubBranchName:
-    Value: !Ref GitHubBranchName
-    Export:
-      Name: GitHubBranchName
 
   BatchRepositoryOwner:
     Value: !Ref BatchRepositoryOwner

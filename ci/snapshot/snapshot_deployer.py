@@ -1,6 +1,8 @@
+import subprocess
 import time
 
-from cloudformation import TEMPLATE_NAME_KEY
+from cloudformation import TEMPLATE_NAME_KEY, SNAPSHOT_ID_OVERRIDE_KEY, BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, \
+    PROOF_ACCOUNT_ID_TO_ADD_KEY
 from cloudformation import PARAMETER_KEYS_KEY
 
 from cloudformation import Cloudformation
@@ -61,22 +63,121 @@ class SnapshotDeployer:
         }
     }
 
-    def __init__(self, target_cloudformation, build_tools_cloudformation):
-        self.target = target_cloudformation
-        self.build_tools = build_tools_cloudformation
+    BUILD_TOOLS_BUCKET_POLICY = {
+        "bucket-policy": {
+            TEMPLATE_NAME_KEY: "bucket-policy.yaml",
+            PARAMETER_KEYS_KEY: ["S3BucketToolsName",
+                                 "ProofAccountIds"]
+        }
+    }
+
+    PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA = {
+        "github": {
+            TEMPLATE_NAME_KEY: "github.yaml",
+            PARAMETER_KEYS_KEY: ['S3BucketToolsName',
+                                 'BuildToolsAccountId',
+                                 'ProjectName',
+                                 'SnapshotID',
+                                 'GitHubRepository',
+                                 'GitHubBranchName']
+        }
+    }
+
+    PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA = {
+        "cbmc-batch": {
+            TEMPLATE_NAME_KEY: "cbmc.yaml",
+            PARAMETER_KEYS_KEY: ['ImageTagSuffix',
+                                 'BuildToolsAccountId']
+        },
+        "alarms-prod": {
+            TEMPLATE_NAME_KEY: "alarms-prod.yaml",
+            PARAMETER_KEYS_KEY: ['ProjectName',
+                                 'SIMAddress',
+                                 'NotificationAddress']
+        },
+        "canary": {
+            TEMPLATE_NAME_KEY: "canary.yaml",
+            PARAMETER_KEYS_KEY: ['GitHubRepository',
+                                 'GitHubBranchName',
+                                 'GitHubLambdaAPI']
+        }
+
+    }
+
+    def __init__(self, build_tools_profile, proof_profile, snapshot_filename, parameters_filename):
+        self.build_tools = Cloudformation(build_tools_profile, snapshot_filename)
+        self.proof_account = Cloudformation(proof_profile,snapshot_filename,
+                                            project_params_filename=parameters_filename,
+                                            shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name)
+
+    @staticmethod
+    def parse_snapshot_id(output):
+        sid = None
+        for line in output.split('\n'):
+            if line.startswith('Updating SnapshotID to '):
+                sid = line[len('Updating SnapshotID to '):]
+                break
+        if sid is None:
+            raise UserWarning("snapshot id is none")
+        return sid
+
+    @staticmethod
+    def run(string):
+        print('Running: {}'.format(string))
+        result = subprocess.run(string.split(), capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+        result.check_returncode()
+        return result.stdout
 
     def deploy_globals(self):
         self.build_tools.deploy_stacks(SnapshotDeployer.GLOBALS_CLOUDFORMATION_DATA)
 
-    def deploy_build_tools(self):
-        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_CLOUDFORMATION_DATA)
+    def deploy_build_tools(self, snapshot_id):
+        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_CLOUDFORMATION_DATA, s3_template_source=True,
+                                       overrides={
+                                           "SnapshotID": snapshot_id
+                                       })
 
         for pipeline in SnapshotDeployer.BUILD_PIPELINES:
             self.build_tools.wait_for_pipeline_completion(pipeline)
 
+    def add_proof_account_to_shared_bucket_policy(self, snapshot_id):
+        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_BUCKET_POLICY, s3_template_source=True,
+                                       overrides={
+                                           SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
+                                           PROOF_ACCOUNT_ID_TO_ADD_KEY: self.proof_account.account_id
+                                       })
 
-build_tools_cf = Cloudformation("shared-tools",  "snapshot.json")
+    def create_new_snapshot(self):
+        cmd = './snapshot-create --profile {} --snapshot snapshot.json'
+        output = SnapshotDeployer.run(cmd.format(self.build_tools.profile))
+        return SnapshotDeployer.parse_snapshot_id(output)
 
-deployer = SnapshotDeployer(None, build_tools_cf)
+    def deploy_proof_account_github(self, snapshot_id):
+        self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
+                                         s3_template_source=True,
+                                         overrides={
+                                             SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
+                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
+                                         })
+
+    def deploy_proof_account_stacks(self, snapshot_id):
+        self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA,
+                                         s3_template_source=True,
+                                         overrides={
+                                             SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
+                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
+                                         })
+
+
+deployer = SnapshotDeployer("shared-tools", "fake-prod", "snapshot.json", "parameters.json")
 deployer.deploy_globals()
-deployer.deploy_build_tools()
+snapshot_id = deployer.create_new_snapshot()
+
+deployer.deploy_build_tools(snapshot_id)
+deployer.add_proof_account_to_shared_bucket_policy(snapshot_id)
+deployer.deploy_proof_account_github(snapshot_id)
+deployer.deploy_proof_account_stacks(snapshot_id)

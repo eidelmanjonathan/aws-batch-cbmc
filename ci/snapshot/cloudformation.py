@@ -1,3 +1,5 @@
+import copy
+import json
 import time
 
 import boto3
@@ -13,12 +15,20 @@ TEMPLATE_NAME_KEY = "template_name"
 PARAMETER_KEYS_KEY = "parameter_keys"
 PARAMETER_OVERRIDES_KEY = "parameter_overrides"
 
+SNAPSHOT_ID_OVERRIDE_KEY = "SnapshotID"
+BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY = "BuildToolsAccountId"
+PROOF_ACCOUNT_ID_TO_ADD_KEY = "ProofAccountIdToAdd"
 
+UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
+                              "There should only be one statement. Bucket policy should only be updated " \
+                              "with CloudFormation template. Aborting!"
 class Cloudformation:
     CAPABILITIES = ['CAPABILITY_NAMED_IAM']
 
     def __init__(self, profile, snapshot_filename, project_params_filename=None, shared_tool_bucket_name = None):
+        self.profile = profile
         self.session = boto3.session.Session(profile_name=profile)
+        self.account_id = self.session.client('sts').get_caller_identity().get('Account')
         self.stacks = Stacks(self.session)
         self.s3 = self.session.client("s3")
         self.snapshot = Snapshot(filename=snapshot_filename)
@@ -34,8 +44,9 @@ class Cloudformation:
         if key == 'GitHubToken':
             key = 'GitHubCommitStatusPAT'
         try:
+            params_val = self.project_params.project_params.get(key) if self.project_params else None
             return (self.snapshot.get_param(key) or
-                    self.project_params.project_params.get(key) or
+                    params_val or
                     self.stacks.get_output(key) or
                     self.secrets.get_secret_value(key)[1])
             # pylint: disable=bare-except
@@ -48,8 +59,51 @@ class Cloudformation:
         except:
             return None
 
+    def _get_existing_bucket_policy_accounts(self):
+        """
+        Gets the AWS accounts that have read access to this S3 bucket. We are assuming that changes have only been made
+        using these scripts and the CloudFormation template. If anything looks like it was changed manually, we fail
+        :return: Account IDs that currently have read access to the bucket
+        """
+        try:
+            result = self.s3.get_bucket_policy(Bucket=self.shared_tool_bucket_name)
+        # FIXME: I couldn't seem to import the specific exception here
+        except Exception:
+            print("Could not find an existing bucket policy. Creating a new one")
+            return []
+        policy_json = json.loads(result["Policy"])
+
+        if len(policy_json["Statement"]) > 1:
+            raise Exception(UNEXPECTED_POLICY_MSG)
+
+        policy = policy_json["Statement"][0]["Principal"]["AWS"]
+        action = policy_json["Statement"][0]["Action"]
+        if set(action) != {"s3:GetObject", "s3:ListBucket"}:
+            raise Exception(UNEXPECTED_POLICY_MSG)
+
+        if isinstance(policy, list):
+            account_ids = list(map(lambda a: a.replace("arn:aws:iam::", "").replace(":root", ""), policy))
+        else:
+            account_ids = [policy.replace("arn:aws:iam::", "").replace(":root", "")]
+        return account_ids
+
+    # This function gets any weird rule about parameters that we don't want to include anywhere else in the logic
+    def _process_parameter_overrides(self, overrides, keys):
+        new_overrides = copy.deepcopy(overrides)
+        if "S3BucketToolsName" in keys and "S3BucketToolsName" not in new_overrides.keys():
+            new_overrides["S3BucketToolsName"] = self.shared_tool_bucket_name
+        if "ProofAccountIds" in keys and "ProofAccountIds" not in new_overrides.keys():
+            existing_proof_accounts = self._get_existing_bucket_policy_accounts()
+            existing_proof_accounts.append(overrides.get("ProofAccountIdToAdd"))
+            existing_proof_accounts = list(set(existing_proof_accounts))
+            new_overrides["ProofAccountIds"] =",".join(list(map(lambda p: "arn:aws:iam::{}:root".format(p), existing_proof_accounts)))
+        return new_overrides
+
+
+
     def _make_parameters(self, keys, parameter_overrides):
         parameter_overrides = parameter_overrides if parameter_overrides else {}
+        parameter_overrides = self._process_parameter_overrides(parameter_overrides, keys)
         parameters = []
         for key in sorted(keys):
             if key in parameter_overrides.keys():
@@ -107,22 +161,30 @@ class Cloudformation:
             self._update_stack(stack_name, parameters, template_body=template_body,
                                template_url=template_url)
 
-    def _get_s3_url_for_template(self, template_name):
+    def _get_s3_url_for_template(self, template_name, parameter_overrides = None):
+        snapshot_id = parameter_overrides.get("SnapshotID")
+        snapshot_id = snapshot_id if snapshot_id else self.snapshot.get_parameter('SnapshotID')
+
+        if not snapshot_id:
+            raise Exception("Cannot fetch templates from S3 with no snapshot ID")
         return ("https://s3.amazonaws.com/{}/snapshot/snapshot-{}/{}"
                          .format(self.shared_tool_bucket_name,
-                                 self.snapshot.get_parameter('SnapshotID'),
+                                 snapshot_id,
                                  template_name))
 
 
     def deploy_stack(self, stack_name, template_name, parameter_keys,
                      s3_template_source=False, parameter_overrides=None):
+        template_url = None
+        template_body = None
         if s3_template_source:
-            template_body = self._get_s3_url_for_template(template_name)
+            template_url = self._get_s3_url_for_template(template_name, parameter_overrides)
         else:
             template_body = open(template_name).read()
         parameters = self._make_parameters(parameter_keys, parameter_overrides)
         try:
-            self._create_or_update_stack(stack_name, parameters, template_name, template_body)
+            self._create_or_update_stack(stack_name, parameters, template_name, template_body=template_body,
+                                         template_url=template_url)
         except botocore.exceptions.ClientError as err:
             code = err.response['Error']['Code']
             msg = err.response['Error']['Message']
@@ -131,15 +193,16 @@ class Cloudformation:
             else:
                 raise
 
-    def deploy_stacks(self, stacks_to_deploy, s3_template_source=False):
+    def deploy_stacks(self, stacks_to_deploy, s3_template_source=False, overrides = None):
         stack_names = stacks_to_deploy.keys()
         if not self.stacks.stable_stacks(stack_names):
             print("Stacks not stable: {}".format(stack_names))
+            # quit
         for key in stacks_to_deploy.keys():
             self.deploy_stack(key, stacks_to_deploy[key][TEMPLATE_NAME_KEY],
                               stacks_to_deploy[key][PARAMETER_KEYS_KEY],
                               s3_template_source=s3_template_source,
-                              parameter_overrides=stacks_to_deploy[key].get(PARAMETER_OVERRIDES_KEY))
+                              parameter_overrides=overrides)
         self.stacks.wait_for_stable_stacks(stack_names)
 
 

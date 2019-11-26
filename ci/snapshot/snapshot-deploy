@@ -82,9 +82,11 @@ def get_value(name, stacks, snapshot, project_params, secrets):
     if name == 'GitHubToken':
         name = 'GitHubCommitStatusPAT'
     try:
+        # User can either provide params in snapshot/project_params
+        # Otherwise we default to what's in the stacks already
         return (snapshot.get_param(name) or
-                stacks.get_output(name) or
                 project_params.project_params.get(name) or
+                stacks.get_output(name) or
                 secrets.get_secret_value(name)[1])
     # pylint: disable=bare-except
     # botocore.errorfactory.ResourceNotFoundException may be thrown here,
@@ -188,6 +190,7 @@ def deploy_stack_s3(stack_name, template_name, parameter_keys,
 
 ################################################################
 
+# TODO: We should not pass project_params when deploying things to shared build account
 def deploy_globals(stacks, snapshot, project_params, secrets, doit=None, local=False):
 
     if not doit:
@@ -210,9 +213,7 @@ def deploy_globals(stacks, snapshot, project_params, secrets, doit=None, local=F
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('globals',
            "build-globals.yaml",
-           ["GitHubRepository",
-            "GitHubBranchName",
-            "BatchRepositoryOwner",
+           ["BatchRepositoryOwner",
             "BatchRepositoryName",
             "BatchRepositoryBranchName",
             "ViewerRepositoryOwner",
@@ -223,6 +224,7 @@ def deploy_globals(stacks, snapshot, project_params, secrets, doit=None, local=F
 
     print("Remember to set up the PicaPica replication.")
 
+# TODO: We should not pass project_params when deploying things to shared build account
 def deploy_build_batch(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-batch',
@@ -234,6 +236,7 @@ def deploy_build_batch(stacks, snapshot, project_params, secrets, local=False):
             'BatchRepositoryBranchName'],
            stacks, snapshot, project_params, secrets)
 
+# TODO: We should not pass project_params when deploying things to shared build account
 def deploy_build_viewer(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-viewer',
@@ -245,6 +248,7 @@ def deploy_build_viewer(stacks, snapshot, project_params, secrets, local=False):
             'ViewerRepositoryBranchName'],
            stacks, snapshot, project_params, secrets)
 
+# TODO: We should not pass project_params when deploying things to shared build account
 def deploy_build_docker(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-docker',
@@ -256,6 +260,7 @@ def deploy_build_docker(stacks, snapshot, project_params, secrets, local=False):
             'BatchRepositoryBranchName'],
            stacks, snapshot, project_params, secrets)
 
+# TODO: We should not pass project_params when deploying things to shared build account
 def deploy_build_cbmc_linux(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-cbmc-linux',
@@ -265,6 +270,7 @@ def deploy_build_cbmc_linux(stacks, snapshot, project_params, secrets, local=Fal
             'CBMCBranchName'],
            stacks, snapshot, project_params, secrets)
 
+# TODO: We should not pass project_params when deploying things to shared build account
 def deploy_alarms_build(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('alarms-build',
@@ -528,7 +534,7 @@ def main():
             return False
 
         account_id = session.client('sts').get_caller_identity()['Account']
-        # chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
+        chime_notification(os.environ["USER"], args.snapshotid, account_id, args.profile)
 
     return True
 
