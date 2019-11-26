@@ -1,4 +1,5 @@
 *.zip
 snapshot-*-*
 snapshot.json
+parameters.json
 __pycache__

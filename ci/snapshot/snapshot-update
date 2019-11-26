@@ -52,6 +52,11 @@ def create_parser():
     arg.add_argument('--init-build-account',
                      action='store_true',
                      help='Use flag if this is the first time deploying build account and the proof account')
+
+    arg.add_argument('--project-params',
+                     metavar='FILE',
+                     help='JSON file with project parameters'
+    )
     arg.add_argument('--init-proof-account',
                      action='store_true',
                      help='Use flag if this is the first time deploying proof account but the build'
@@ -244,10 +249,10 @@ def main():
 
     # If we want to set up the shared build account for the first time
     if args.init_build_account:
-        cmd = './snapshot-deploy --profile {} --doit --globals --snapshot snapshot.json'
-        run(cmd.format(build_profile))
-        cmd = './snapshot-deploy --profile {} --build --snapshot snapshot.json'
-        run(cmd.format(build_profile))
+        cmd = './snapshot-deploy --profile {} --doit --globals --snapshot snapshot.json --project-params {}'
+        run(cmd.format(build_profile, args.project_params))
+        cmd = './snapshot-deploy --profile {} --build --snapshot snapshot.json --project-params {}'
+        run(cmd.format(build_profile, args.project_params))
         session = boto3.session.Session(profile_name=build_profile)
         pipeline_client = session.client("codepipeline")
         wait_for_pipeline_completion("Build-CBMC-Linux-Pipeline", pipeline_client)
@@ -279,15 +284,15 @@ def main():
         output = run(cmd.format(build_profile))
         sid = parse_snapshot_id(output)
 
-        cmd = './snapshot-deploy --profile {} --snapshotid {} --build'
-        run(cmd.format(build_profile, sid))
+        cmd = './snapshot-deploy --profile {} --snapshotid {} --build --project-params {}'
+        run(cmd.format(build_profile, sid, args.project_params))
 
     if args.proof_account_ids:
-        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --proof-account-ids {}'
-        run(cmd.format(profile, build_profile, sid, " ".join(args.proof_account_ids)))
+        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --proof-account-ids {} --project-params {}'
+        run(cmd.format(profile, build_profile, sid, " ".join(args.proof_account_ids),  args.project_params))
     else:
-        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod'
-        run(cmd.format(profile, build_profile, sid))
+        cmd = './snapshot-deploy --profile {} --build-profile {} --snapshotid {} --prod --project-params {}'
+        run(cmd.format(profile, build_profile, sid, args.project_params))
 
     cmd = './snapshot-variable --profile {} --operational'
     run(cmd.format(profile))

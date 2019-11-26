@@ -18,6 +18,8 @@ import snapshott
 import secretst
 
 ################################################################
+from project_params import ProjectParams
+
 
 def create_parser():
     arg = argparse.ArgumentParser(description="""
@@ -42,6 +44,11 @@ def create_parser():
                      metavar='FILE',
                      help='Snapshot file to deploy from filesystem'
                     )
+
+    arg.add_argument('--project-params',
+                     metavar='FILE',
+                     help='JSON file with project parameters'
+    )
     arg.add_argument('--snapshotid',
                      metavar='ID',
                      help='Snapshot ID to deploy from S3'
@@ -71,11 +78,14 @@ def create_parser():
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
                               "There should only be one statement. Bucket policy should only be updated " \
                               "with CloudFormation template. Aborting!"
-def get_value(name, stacks, snapshot, secrets):
+def get_value(name, stacks, snapshot, project_params, secrets):
     if name == 'GitHubToken':
         name = 'GitHubCommitStatusPAT'
     try:
+        # User can either provide params in snapshot/project_params
+        # Otherwise we default to what's in the stacks already
         return (snapshot.get_param(name) or
+                project_params.project_params.get(name) or
                 stacks.get_output(name) or
                 secrets.get_secret_value(name)[1])
     # pylint: disable=bare-except
@@ -88,7 +98,7 @@ def get_value(name, stacks, snapshot, secrets):
     except:
         return None
 
-def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
+def make_parameters(keys, stacks, snapshot, project_params, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
     parameters = []
     for key in sorted(keys):
         if key=="S3BucketToolsName" and s3_bucket_tools_name:
@@ -98,7 +108,7 @@ def make_parameters(keys, stacks, snapshot, secrets, s3_bucket_tools_name=None, 
         elif key=="ProofAccountIds" and proof_account_ids:
             value = ",".join(list(map(lambda p: "arn:aws:iam::{}:root".format(p), proof_account_ids)))
         else:
-            value = get_value(key, stacks, snapshot, secrets)
+            value = get_value(key, stacks, snapshot, project_params, secrets)
         if value is not None:
             parameters.append({"ParameterKey": key, "ParameterValue": value})
     return parameters
@@ -108,10 +118,10 @@ def print_parameters(parameters):
         print("  {:20}: {}".format(param['ParameterKey'], param['ParameterValue']))
 
 def deploy_stack_local(stack_name, template_name, parameter_keys,
-                       stacks, snapshot, secrets, s3_bucket_name=None):
+                       stacks, snapshot, project_params, secrets, s3_bucket_name=None):
     stack_name = stack_name
     template_body = open(template_name).read()
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets, s3_bucket_tools_name=s3_bucket_name)
+    parameters = make_parameters(parameter_keys, stacks, snapshot, project_params, secrets, s3_bucket_tools_name=s3_bucket_name)
     capabilities = ['CAPABILITY_NAMED_IAM']
 
     try:
@@ -140,7 +150,7 @@ def deploy_stack_local(stack_name, template_name, parameter_keys,
             raise
 
 def deploy_stack_s3(stack_name, template_name, parameter_keys,
-                    stacks, snapshot, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
+                    stacks, snapshot, project_params, secrets, s3_bucket_tools_name=None, proof_account_ids=None):
     print("Deplopying stack s3: " + str(s3_bucket_tools_name))
     stack_name = stack_name
     s3_bucket_tools_name = s3_bucket_tools_name if s3_bucket_tools_name else stacks.get_output('S3BucketName')
@@ -149,7 +159,7 @@ def deploy_stack_s3(stack_name, template_name, parameter_keys,
                      .format(s3_bucket_tools_name,
                              snapshot.get_parameter('SnapshotID'),
                              template_name))
-    parameters = make_parameters(parameter_keys, stacks, snapshot, secrets,
+    parameters = make_parameters(parameter_keys, stacks, snapshot, project_params, secrets,
                                  s3_bucket_tools_name=s3_bucket_tools_name, proof_account_ids=proof_account_ids)
     capabilities = ['CAPABILITY_NAMED_IAM']
 
@@ -180,7 +190,8 @@ def deploy_stack_s3(stack_name, template_name, parameter_keys,
 
 ################################################################
 
-def deploy_globals(stacks, snapshot, secrets, doit=None, local=False):
+# TODO: We should not pass project_params when deploying things to shared build account
+def deploy_globals(stacks, snapshot, project_params, secrets, doit=None, local=False):
 
     if not doit:
         print()
@@ -202,20 +213,19 @@ def deploy_globals(stacks, snapshot, secrets, doit=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('globals',
            "build-globals.yaml",
-           ["GitHubRepository",
-            "GitHubBranchName",
-            "BatchRepositoryOwner",
+           ["BatchRepositoryOwner",
             "BatchRepositoryName",
             "BatchRepositoryBranchName",
             "ViewerRepositoryOwner",
             "ViewerRepositoryName",
             "ViewerRepositoryBranchName",
             "S3BucketSuffix"],
-           stacks, snapshot, secrets)
+           stacks, snapshot, project_params, secrets)
 
     print("Remember to set up the PicaPica replication.")
 
-def deploy_build_batch(stacks, snapshot, secrets, local=False):
+# TODO: We should not pass project_params when deploying things to shared build account
+def deploy_build_batch(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-batch',
            "build-batch.yaml",
@@ -224,9 +234,10 @@ def deploy_build_batch(stacks, snapshot, secrets, local=False):
             'BatchRepositoryOwner',
             'BatchRepositoryName',
             'BatchRepositoryBranchName'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, project_params, secrets)
 
-def deploy_build_viewer(stacks, snapshot, secrets, local=False):
+# TODO: We should not pass project_params when deploying things to shared build account
+def deploy_build_viewer(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-viewer',
            "build-viewer.yaml",
@@ -235,9 +246,10 @@ def deploy_build_viewer(stacks, snapshot, secrets, local=False):
             'ViewerRepositoryOwner',
             'ViewerRepositoryName',
             'ViewerRepositoryBranchName'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, project_params, secrets)
 
-def deploy_build_docker(stacks, snapshot, secrets, local=False):
+# TODO: We should not pass project_params when deploying things to shared build account
+def deploy_build_docker(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-docker',
            "build-docker.yaml",
@@ -246,18 +258,20 @@ def deploy_build_docker(stacks, snapshot, secrets, local=False):
             'BatchRepositoryOwner',
             'BatchRepositoryName',
             'BatchRepositoryBranchName'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, project_params, secrets)
 
-def deploy_build_cbmc_linux(stacks, snapshot, secrets, local=False):
+# TODO: We should not pass project_params when deploying things to shared build account
+def deploy_build_cbmc_linux(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('build-cbmc-linux',
            "build-cbmc-linux.yaml",
            ['S3BucketName',
             'GitHubToken',
             'CBMCBranchName'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, project_params, secrets)
 
-def deploy_alarms_build(stacks, snapshot, secrets, local=False):
+# TODO: We should not pass project_params when deploying things to shared build account
+def deploy_alarms_build(stacks, snapshot, project_params, secrets, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('alarms-build',
            "alarms-build.yaml",
@@ -268,9 +282,9 @@ def deploy_alarms_build(stacks, snapshot, secrets, local=False):
             'BuildViewerPipeline',
             'BuildDockerPipeline',
             'BuildCBMCLinuxPipeline'],
-           stacks, snapshot, secrets)
+           stacks, snapshot, project_params, secrets)
 
-def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
+def deploy_github(stacks, snapshot, project_params, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('github',
            "github.yaml",
@@ -280,49 +294,49 @@ def deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=F
             'SnapshotID',
             'GitHubRepository',
             'GitHubBranchName'],
-           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
+           stacks, snapshot, project_params, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
 
-def deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
+def deploy_cbmc_batch(stacks, snapshot, project_params, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('cbmc-batch',
            "cbmc.yaml",
            ['ImageTagSuffix', 'BuildToolsAccountId'],
-           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
+           stacks, snapshot, project_params, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
+def deploy_alarms_prod(stacks, snapshot, project_params, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('alarms-prod',
            "alarms-prod.yaml",
            ['ProjectName',
             'SIMAddress',
             'NotificationAddress'],
-           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
+           stacks, snapshot, project_params, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket=None, local=False):
+def deploy_canary(stacks, snapshot, project_params, secrets, build_tools_s3_bucket=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy('canary',
            "canary.yaml",
            ['GitHubRepository',
             'GitHubBranchName',
             'GitHubLambdaAPI'],
-           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
+           stacks, snapshot, project_params, secrets, s3_bucket_tools_name=build_tools_s3_bucket)
 
-def deploy_bucket_policy(stacks, snapshot, secrets, build_tools_s3_bucket=None, proof_account_ids=None, local=False):
+def deploy_bucket_policy(stacks, snapshot, project_params, secrets, build_tools_s3_bucket=None, proof_account_ids=None, local=False):
     deploy = deploy_stack_local if local else deploy_stack_s3
     deploy("bucket-policy",
            "bucket-policy.yaml",
            ["S3BucketToolsName", "ProofAccountIds"],
-           stacks, snapshot, secrets, s3_bucket_tools_name=build_tools_s3_bucket, proof_account_ids=proof_account_ids)
+           stacks, snapshot, project_params, secrets, s3_bucket_tools_name=build_tools_s3_bucket, proof_account_ids=proof_account_ids)
 ################################################################
 
-def deploy_build_globals(stacks, snapshot, secrets, doit=None, local=False):
+def deploy_build_globals(stacks, snapshot,  project_params, secrets, doit=None, local=False):
     stks = ['globals']
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_globals(stacks, snapshot, secrets, doit, local)
+    deploy_globals(stacks, snapshot, project_params, secrets, doit, local)
 
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
@@ -331,24 +345,24 @@ def deploy_build_globals(stacks, snapshot, secrets, doit=None, local=False):
 
     return True
 
-def deploy_global(stacks, snapshot, secrets, doit=None, local=False):
-    if not deploy_build_globals(stacks, snapshot, secrets, doit, local):
+def deploy_global(stacks, snapshot, project_params, secrets, doit=None, local=False):
+    if not deploy_build_globals(stacks, snapshot, project_params, secrets, doit, local):
         return False
 
     return True
 
 ################################################################
 
-def deploy_build_tools(stacks, snapshot, secrets, local=False):
+def deploy_build_tools(stacks, snapshot, project_params, secrets, local=False):
     stks = ['build-batch', 'build-viewer', 'build-docker', 'build-cbmc-linux']
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_build_batch(stacks, snapshot, secrets, local)
-    deploy_build_viewer(stacks, snapshot, secrets, local)
-    deploy_build_docker(stacks, snapshot, secrets, local)
-    deploy_build_cbmc_linux(stacks, snapshot, secrets, local)
+    deploy_build_batch(stacks, snapshot, project_params, secrets, local)
+    deploy_build_viewer(stacks, snapshot, project_params, secrets, local)
+    deploy_build_docker(stacks, snapshot, project_params, secrets, local)
+    deploy_build_cbmc_linux(stacks, snapshot, project_params, secrets, local)
 
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
@@ -357,13 +371,13 @@ def deploy_build_tools(stacks, snapshot, secrets, local=False):
 
     return True
 
-def deploy_build_alarms(stacks, snapshot, secrets, local=False):
+def deploy_build_alarms(stacks, snapshot, project_params, secrets, local=False):
     stks = ['alarms-build']
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_alarms_build(stacks, snapshot, secrets, local)
+    deploy_alarms_build(stacks, snapshot, project_params, secrets, local)
 
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
@@ -372,22 +386,21 @@ def deploy_build_alarms(stacks, snapshot, secrets, local=False):
 
     return True
 
-def deploy_build(stacks, snapshot, secrets, local=False):
-    if not deploy_build_tools(stacks, snapshot, secrets, local):
+def deploy_build(stacks, snapshot, project_params, secrets, local=False):
+    if not deploy_build_tools(stacks, snapshot, project_params, secrets, local):
         return False
-    if not deploy_build_alarms(stacks, snapshot, secrets, local):
+    if not deploy_build_alarms(stacks, snapshot, project_params, secrets, local):
         return False
     return True
 
 ################################################################
 
-def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
+def deploy_prod(stacks, snapshot, project_params, secrets, build_tools_s3_bucket, local=False):
     stks = ['github']
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
-
-    deploy_github(stacks, snapshot, secrets, build_tools_s3_bucket, local)
+    deploy_github(stacks, snapshot, project_params, secrets, build_tools_s3_bucket, local)
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
         print("Stacks not successful: {}".format(stks))
@@ -398,9 +411,9 @@ def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
         print("Stacks not stable: {}".format(stks))
         return False
 
-    deploy_cbmc_batch(stacks, snapshot, secrets, build_tools_s3_bucket, local)
-    deploy_alarms_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local)
-    deploy_canary(stacks, snapshot, secrets, build_tools_s3_bucket, local)
+    deploy_cbmc_batch(stacks, snapshot, project_params, secrets, build_tools_s3_bucket, local)
+    deploy_alarms_prod(stacks, snapshot, project_params, secrets, build_tools_s3_bucket, local)
+    deploy_canary(stacks, snapshot, project_params, secrets, build_tools_s3_bucket, local)
 
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
@@ -410,12 +423,12 @@ def deploy_prod(stacks, snapshot, secrets, build_tools_s3_bucket, local=False):
     return True
 
 
-def deploy_policy(stacks, snapshot, secrets, build_tools_s3_bucket=None, proof_account_ids=None, local=False):
+def deploy_policy(stacks, snapshot, project_params, secrets, build_tools_s3_bucket=None, proof_account_ids=None, local=False):
     stks = ["bucket-policy"]
     if not stacks.stable_stacks(stks):
         print("Stacks not stable: {}".format(stks))
         return False
-    deploy_bucket_policy(stacks, snapshot, secrets, build_tools_s3_bucket,
+    deploy_bucket_policy(stacks, snapshot, project_params, secrets, build_tools_s3_bucket,
                          proof_account_ids, local)
     stacks.wait_for_stable_stacks(stks)
     if not stacks.successful_stacks(stks):
@@ -473,6 +486,7 @@ def main():
     stacks = stackst.Stacks(session)
     snapshot = None
     build_tools_bucket = None
+    project_params = ProjectParams(filename=args.project_params)
 
     # If we are deploying a proof/prod account, we must get the snapshot from the shared build account
     if args.snapshotid and args.prod:
@@ -491,7 +505,7 @@ def main():
             build_secrets = secretst.Secrets(build_session)
             all_allowed_proof_accounts = get_allowed_accounts(build_s3_client, build_tools_bucket)
             all_allowed_proof_accounts.extend(args.proof_account_ids)
-            if not deploy_policy(build_stacks, snapshot, build_secrets, build_tools_bucket, all_allowed_proof_accounts, args.local):
+            if not deploy_policy(build_stacks, snapshot, args.project_params, build_secrets, build_tools_bucket, all_allowed_proof_accounts, args.local):
                 return False
 
     # If we are setting up the build account itself, we only need to reference the build account
@@ -510,13 +524,13 @@ def main():
     secrets = secretst.Secrets(session)
 
     if args.globals:
-        if not deploy_global(stacks, snapshot, secrets, args.doit, args.local):
+        if not deploy_global(stacks, snapshot, project_params, secrets, args.doit, args.local):
             return False
     if args.build:
-        if not deploy_build(stacks, snapshot, secrets, args.local):
+        if not deploy_build(stacks, snapshot, project_params, secrets, args.local):
             return False
     if args.prod:
-        if not deploy_prod(stacks, snapshot, secrets, build_tools_bucket, args.local):
+        if not deploy_prod(stacks, snapshot, project_params, secrets, build_tools_bucket, args.local):
             return False
 
         account_id = session.client('sts').get_caller_identity()['Account']
