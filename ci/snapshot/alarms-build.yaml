@@ -4,8 +4,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
-  ProjectName:
-    Type: String
 
   SIMAddress:
     Type: String
@@ -94,7 +92,7 @@ Resources:
                 Source=SENDER,
                 Destination={'ToAddresses': [TO]},
                 Message={
-                  'Subject': {'Data': '${ProjectName} ' + subject},
+                  'Subject': {'Data': 'Build tools account ' + subject},
                   'Body': {
                     'Text': {'Data': body},
                     'Html': {

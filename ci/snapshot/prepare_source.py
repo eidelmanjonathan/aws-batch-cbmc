@@ -360,15 +360,24 @@ def source_prepare():
     logging.basicConfig(level=getattr(logging, arg.logging.upper()),
                         format='%(levelname)s: %(message)s')
     logging.debug(debug_json('invocation', script_data(arg)))
+    cbmc_ci_github.update_status("pending", "Proof jobs starting", None, "Status pending", arg.id, arg.sha, False)
+    try:
+        base_name = repository_basename(arg.repository)
+        clone_repository(arg.repository, base_name)
+        checkout_repository(arg.sha, arg.branch, base_name)
+        generate_cbmc_makefiles(PROOF_MARKERS, base_name)
+        generate_tarfile(arg.tarfile_name, base_name)
+        upload_tarfile_to_s3(arg.tarfile_name, arg.bucket_proofs, arg.tarfile_path)
+        generate_cbmc_jobs(
+            base_name, arg.id, arg.sha, arg.is_draft, arg.tarfile_name)
+        cbmc_ci_github.update_status("success", "Proof jobs starting", None,
+                                     "Successfully started proof jobs", arg.id, arg.sha, False)
 
-    base_name = repository_basename(arg.repository)
-    clone_repository(arg.repository, base_name)
-    checkout_repository(arg.sha, arg.branch, base_name)
-    generate_cbmc_makefiles(PROOF_MARKERS, base_name)
-    generate_tarfile(arg.tarfile_name, base_name)
-    upload_tarfile_to_s3(arg.tarfile_name, arg.bucket_proofs, arg.tarfile_path)
-    generate_cbmc_jobs(
-        base_name, arg.id, arg.sha, arg.is_draft, arg.tarfile_name)
+    except Exception:
+        cbmc_ci_github.update_status("error", "Proof jobs starting", None,
+                                     "Failed to start proof jobs.  Likely fix: please rebase pull request against master",
+                                     arg.id, arg.sha, False)
+
 
 ################################################################
 
