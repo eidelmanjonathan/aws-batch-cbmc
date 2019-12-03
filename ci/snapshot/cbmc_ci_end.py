@@ -11,6 +11,7 @@ import json
 import boto3
 
 from cbmc_ci_github import update_status
+import clog_writert
 
 # S3 Bucket name for storing CBMC Batch packages and outputs
 bkt = os.environ['S3_BUCKET_PROOFS']
@@ -29,24 +30,32 @@ class Job_name_info:
     def __init__(self, job_name):
         job_name_match = self.check_job_name(job_name)
         if job_name_match:
-            self.is_cbmc_batch_property_job = True
+            self.is_cbmc_batch_job = True
             self.job_name = job_name_match.group(1)
             self.timestamp = job_name_match.group(2)
+            self.type = job_name_match.group(3)
         else:
-            self.is_cbmc_batch_property_job = False
+            self.is_cbmc_batch_job = False
+
+    def is_cbmc_property_job(self):
+        return self.is_cbmc_batch_job and self.type == "property"
+
 
     @staticmethod
     def check_job_name(job_name):
         """Check job_name to see if it matches CBMC Batch naming conventions"""
         job_name_pattern = r"([\S]+)"
         timestamp_pattern = r"(\S{16})"
-        pattern = job_name_pattern + timestamp_pattern + "-property$"
+        pattern = job_name_pattern + timestamp_pattern + "-([a-z]*)$"
         res = re.search(pattern, job_name)
         return res
 
     def get_s3_dir(self):
         """Get s3 bucket directory based on CBMC Batch naming conventions"""
         return self.job_name + self.timestamp
+
+    def get_full_name(self):
+        return self.job_name + self.timestamp + "-" + self.type
 
     def get_job_dir(self):
         """
@@ -76,39 +85,84 @@ def lambda_handler(event, context):
     print("CBMC CI End Event")
     print(json.dumps(event))
     job_name = event["detail"]["jobName"]
+    job_id = event["detail"]["jobId"]
     status = event["detail"]["status"]
     job_name_info = Job_name_info(job_name)
     if (status in ["SUCCEEDED", "FAILED"] and
-            job_name_info.is_cbmc_batch_property_job):
+            job_name_info.is_cbmc_batch_job):
         s3_dir = job_name_info.get_s3_dir()
         job_dir = job_name_info.get_job_dir()
         # Prepare description for GitHub status update
-        desc = "CBMC Batch job " + s3_dir + " " + status
+        desc = "CBMC Batch job " + job_name + " " + status
         # Get bookkeeping information about commit
         repo_id = int(read_from_s3(s3_dir + "/repo_id.txt"))
         sha = read_from_s3(s3_dir + "/sha.txt").decode('ascii')
         draft_status = read_from_s3(s3_dir + "/is_draft.txt").decode('ascii')
         is_draft = draft_status.lower() == "true"
+        correlation_list = read_from_s3(s3_dir + "/correlation_list.txt").decode('ascii')
+        event["correlation_list"] = json.loads(correlation_list)
+        response = {}
+
+        # AWS batch 'magic' that must be added to wire together subprocesses since we don't modify cbmc-batch
+        # What is happening here is that CBMC Batch creates subprocesses for four tasks: build, property (prove),
+        # coverage, and viewer.  Since we don't want to modify the code for CBMC batch, we are post-facto creating
+        # the correlation ids for these tasks to complete the proof tree when they finish.
+        # We mark the parent task as completed when the 'property' task succeeds or fails.
+        #
+        # Although we are not tracking the child tasks accurately for, e.g., timings, the parent task is properly
+        # tracked, and the overall timings are correct.
+        #
+        # See clog_writert.py for more information on correlation ids and logging.
+
+        parent_logger = clog_writert.CLogWriter.init_lambda(s3_dir, event, context)
+        child_correlation_list = parent_logger.create_child_correlation_list()
+        child_logger = clog_writert.CLogWriter.init_aws_batch(job_name, job_id, child_correlation_list)
+        child_logger.launched()
+        child_logger.started()
+
         try:
-            # Get expected output substring
-            expected = read_from_s3(s3_dir + "/expected.txt")
-            # Get CBMC output
-            cbmc = read_from_s3(s3_dir + "/out/cbmc.txt")
-            if expected in cbmc:
-                print("Expected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+            if job_name_info.is_cbmc_property_job():
+                print("type: {}, is_cbmc_property_job: {}, job name: {}".format(job_name_info.type,
+                                                                                job_name_info.is_cbmc_property_job(),
+                                                                                job_name))
+                # write parent task information once we get property answer.
+                parent_logger.started()
+                parent_logger.summary(clog_writert.SUCCEEDED, event, response)
+
+                if status == "SUCCEEDED":
+                    # Get expected output substring
+                    expected = read_from_s3(s3_dir + "/expected.txt")
+                    response['expected_result'] = expected.decode('ascii')
+                    # Get CBMC output
+                    cbmc = read_from_s3(s3_dir + "/out/cbmc.txt")
+                    if expected in cbmc:
+                        print("Expected Verification Result: {}".format(s3_dir))
+                        update_status(
+                            "success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                        response['status'] = clog_writert.SUCCEEDED
+                    else:
+                        print("Unexpected Verification Result: {}".format(s3_dir))
+                        update_status(
+                            "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                        response['status'] = clog_writert.FAILED
+                else:
+                    response['status'] = clog_writert.FAILED
             else:
-                print("Unexpected Verification Result: {}".format(s3_dir))
-                update_status(
-                    "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
+
+            child_logger.summary(response['status'], event, response)
+
         except Exception as e:
             traceback.print_exc()
             # CBMC Error
             desc += ": CBMC Error"
             print(desc)
             update_status("error", job_dir, s3_dir, desc, repo_id, sha, False)
+            response['error'] = "Exception: {}; Traceback: {}".format(str(e), traceback.format_exc())
+            parent_logger.summary(clog_writert.FAILED, event, response)
+            child_logger.summary(clog_writert.FAILED, event, response)
             raise e
+
     else:
         print("No action for " + job_name + ": " + status)
 

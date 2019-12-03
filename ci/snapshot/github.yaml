@@ -196,7 +196,10 @@ Resources:
   HandleWebhookLambda:
     Type: AWS::Lambda::Function
     Properties:
-      Handler: index.lambda_handler
+      Handler: handle_webhook.lambda_handler
+      Code:
+        S3Bucket: !Ref S3BucketToolsName
+        S3Key: !Sub "snapshot/snapshot-${SnapshotID}/lambda.zip"
       Role: !GetAtt WebhookLambdaRole.Arn
       Runtime: python3.6
       Timeout: 30
@@ -204,82 +207,8 @@ Resources:
       Environment:
         Variables:
           CBMC_CI_OPERATIONAL: True
-      Code:
-        ZipFile: !Sub |
-          import os
-          import hashlib
-          import hmac
-          import json
-          import traceback
-          from pprint import pprint
+          INVOKE_BATCH_LAMBDA: !Sub "${InvokeBatchLambda}"
 
-          import boto3
-
-          def get_github_secret():
-              """Get plaintext for key used by GitHub to compute HMAC"""
-              sm = boto3.client('secretsmanager')
-              s = sm.get_secret_value(SecretId='GitHubSecret')
-              return str(json.loads(s['SecretString'])[0]['Secret'])
-
-          def check_hmac(github_signature, payload):
-              """
-              Check HMAC as suggested here:
-              https://developer.github.com/webhooks/securing/
-              """
-              h = hmac.new(get_github_secret().encode(), payload.encode(), hashlib.sha1)
-              signature = 'sha1=' + h.hexdigest()
-              return hmac.compare_digest(signature, github_signature)
-
-          def print_summary(event, response):
-              statusCode = response['statusCode']
-              summary = {}
-              summary['function'] = "HandleWebhookLambda"
-              summary['orig_aws_request_id'] = event['orig_aws_request_id']
-              summary['status'] = "OK" if (statusCode >= 200 and statusCode <= 299) else "FAILED"
-              summary['statusCode'] = statusCode
-              summary['event'] = event
-              summary['response'] = response
-              print(json.dumps(summary))
-
-          def lambda_handler(event, context):
-              print("event = ")
-              print(json.dumps(event))
-              print("context = ")
-              pprint(context)
-
-              running = os.environ.get('CBMC_CI_OPERATIONAL')
-              if not (running and running.strip().lower() == 'true'):
-                 print("Ignoring GitHub event: CBMC CI is not running")
-                 return {'statusCode': 200}
-
-              response = {}
-              try:
-                  event['headers'] = {k.lower(): v
-                                      for k, v in event['headers'].items()}
-                  event['orig_aws_request_id'] = context.aws_request_id
-                  if not check_hmac(
-                          str(event['headers']['x-hub-signature']),
-                          str(event['body'])):
-                      response['statusCode'] = 403
-                  elif event['headers']['x-github-event'] == 'ping':
-                      response['body'] = 'pong'
-                      response['statusCode'] = 200
-                  else:
-                      lc = boto3.client('lambda')
-                      result = lc.invoke(
-                          FunctionName='${InvokeBatchLambda}',
-                          Payload=json.dumps(event))
-                      response['statusCode'] = result['StatusCode']
-              except Exception as e:
-                  response['statusCode'] = 500
-                  traceback.print_exc()
-                  print('Error: ' + str(e))
-                  # raise e
-
-              print("response = ")
-              print(json.dumps(response))
-              print_summary(event, response)
-              return response
 
   GitHubLambdaAPI:
     Type: AWS::ApiGateway::RestApi
