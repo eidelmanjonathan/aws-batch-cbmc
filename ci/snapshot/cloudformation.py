@@ -179,6 +179,8 @@ class Cloudformation:
         template_body = None
         if s3_template_source:
             template_url = self._get_s3_url_for_template(template_name, parameter_overrides)
+            print(template_url)
+
         else:
             template_body = open(template_name).read()
         parameters = self._make_parameters(parameter_keys, parameter_overrides)
@@ -218,3 +220,6 @@ class Cloudformation:
         while not self._is_pipeline_complete(pipeline_name):
             time.sleep(1)
         print("Done waiting for build pipeline: {0}".format(pipeline_name))
+
+    def get_current_snapshot_id(self):
+        return self.stacks.get_output("SnapshotID")

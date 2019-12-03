@@ -104,11 +104,21 @@ class SnapshotDeployer:
 
     }
 
-    def __init__(self, build_tools_profile, proof_profile, snapshot_filename, parameters_filename):
+    def __init__(self, build_tools_profile=None, proof_profile=None, snapshot_filename=None, parameters_filename=None):
+        if not build_tools_profile:
+            raise Exception("Cannot deploy stacks with no build tools profile")
+        if not snapshot_filename:
+            raise Exception("Cannot deploy stacks without snapshot JSON file")
+        if proof_profile and not parameters_filename:
+            raise Exception("Cannot deploy proof account without project parameters file")
         self.build_tools = Cloudformation(build_tools_profile, snapshot_filename)
-        self.proof_account = Cloudformation(proof_profile,snapshot_filename,
-                                            project_params_filename=parameters_filename,
-                                            shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name)
+        self.snapshot_filename = snapshot_filename
+        print(self.snapshot_filename)
+        exit()
+        if proof_profile:
+            self.proof_account = Cloudformation(proof_profile,snapshot_filename,
+                                                project_params_filename=parameters_filename,
+                                                shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name)
 
     @staticmethod
     def parse_snapshot_id(output):
@@ -152,8 +162,8 @@ class SnapshotDeployer:
                                        })
 
     def create_new_snapshot(self):
-        cmd = './snapshot-create --profile {} --snapshot snapshot.json'
-        output = SnapshotDeployer.run(cmd.format(self.build_tools.profile))
+        cmd = './snapshot-create --profile {} --snapshot {}'
+        output = SnapshotDeployer.run(cmd.format(self.build_tools.profile, self.snapshot_filename))
         return SnapshotDeployer.parse_snapshot_id(output)
 
     def deploy_proof_account_github(self, snapshot_id):
@@ -172,12 +182,16 @@ class SnapshotDeployer:
                                              BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
                                          })
 
-
+    def get_current_snapshot_id(self):
+        return self.proof_account.get_current_snapshot_id()
+#
+#
 deployer = SnapshotDeployer("shared-tools", "fake-prod", "snapshot.json", "parameters.json")
-deployer.deploy_globals()
-snapshot_id = deployer.create_new_snapshot()
-
-deployer.deploy_build_tools(snapshot_id)
-deployer.add_proof_account_to_shared_bucket_policy(snapshot_id)
-deployer.deploy_proof_account_github(snapshot_id)
-deployer.deploy_proof_account_stacks(snapshot_id)
+print(deployer.get_current_snapshot_id())
+# deployer.deploy_globals()
+# snapshot_id = deployer.create_new_snapshot()
+#
+# deployer.deploy_build_tools(snapshot_id)
+# deployer.add_proof_account_to_shared_bucket_policy(snapshot_id)
+# deployer.deploy_proof_account_github(snapshot_id)
+# deployer.deploy_proof_account_stacks(snapshot_id)
