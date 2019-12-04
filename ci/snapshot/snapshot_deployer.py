@@ -113,8 +113,7 @@ class SnapshotDeployer:
             raise Exception("Cannot deploy proof account without project parameters file")
         self.build_tools = Cloudformation(build_tools_profile, snapshot_filename)
         self.snapshot_filename = snapshot_filename
-        print(self.snapshot_filename)
-        exit()
+
         if proof_profile:
             self.proof_account = Cloudformation(proof_profile,snapshot_filename,
                                                 project_params_filename=parameters_filename,
@@ -153,6 +152,7 @@ class SnapshotDeployer:
 
         for pipeline in SnapshotDeployer.BUILD_PIPELINES:
             self.build_tools.wait_for_pipeline_completion(pipeline)
+            self.build_tools.update_and_write_snapshot()
 
     def add_proof_account_to_shared_bucket_policy(self, snapshot_id):
         self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_BUCKET_POLICY, s3_template_source=True,
@@ -184,14 +184,3 @@ class SnapshotDeployer:
 
     def get_current_snapshot_id(self):
         return self.proof_account.get_current_snapshot_id()
-#
-#
-deployer = SnapshotDeployer("shared-tools", "fake-prod", "snapshot.json", "parameters.json")
-print(deployer.get_current_snapshot_id())
-# deployer.deploy_globals()
-# snapshot_id = deployer.create_new_snapshot()
-#
-# deployer.deploy_build_tools(snapshot_id)
-# deployer.add_proof_account_to_shared_bucket_policy(snapshot_id)
-# deployer.deploy_proof_account_github(snapshot_id)
-# deployer.deploy_proof_account_stacks(snapshot_id)

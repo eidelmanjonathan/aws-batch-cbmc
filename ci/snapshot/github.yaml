@@ -444,4 +444,4 @@ Outputs:
   SnapshotID:
     Value: !Ref SnapshotID
     Export:
-      Name: SnapshotIDfeafe
+      Name: SnapshotID

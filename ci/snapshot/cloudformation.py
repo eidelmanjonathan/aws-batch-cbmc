@@ -23,15 +23,22 @@ UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared bui
                               "There should only be one statement. Bucket policy should only be updated " \
                               "with CloudFormation template. Aborting!"
 class Cloudformation:
+    """
+    This class will handle the end to end management of Cloudformation stacks, as well as Cloudformation templates,
+    including retrieving and storing templates from/to S3 buckets, checking the status of resources and handling
+    snapshot files
+    """
     CAPABILITIES = ['CAPABILITY_NAMED_IAM']
 
-    def __init__(self, profile, snapshot_filename, project_params_filename=None, shared_tool_bucket_name = None):
+    def __init__(self, profile, snapshot_filename=None, project_params_filename=None, shared_tool_bucket_name = None):
         self.profile = profile
         self.session = boto3.session.Session(profile_name=profile)
         self.account_id = self.session.client('sts').get_caller_identity().get('Account')
         self.stacks = Stacks(self.session)
         self.s3 = self.session.client("s3")
-        self.snapshot = Snapshot(filename=snapshot_filename)
+        self.ecr = self.session.client("ecr")
+        self.snapshot = Snapshot(filename=snapshot_filename) if snapshot_filename else None
+        self.snapshot_filename = snapshot_filename
         self.project_params = ProjectParams(filename=project_params_filename) if project_params_filename else None
         self.secrets = Secrets(self.session)
         self.pipeline_client = self.session.client("codepipeline")
@@ -87,8 +94,15 @@ class Cloudformation:
             account_ids = [policy.replace("arn:aws:iam::", "").replace(":root", "")]
         return account_ids
 
-    # This function gets any weird rule about parameters that we don't want to include anywhere else in the logic
     def _process_parameter_overrides(self, overrides, keys):
+        """
+        There are parameters that we don't pass directly to the templates as is. For example ProofAccountIds needs to
+        include both the provided ID, but also all the IDs that have been allowed so far as well. Any weird domain
+        specific rule like that should go here
+        :param overrides: Current parameter overrides
+        :param keys: The keys we are interested in from the overrides
+        :return: new overrides where the values have been processed according the rules in this function
+        """
         new_overrides = copy.deepcopy(overrides)
         if "S3BucketToolsName" in keys and "S3BucketToolsName" not in new_overrides.keys():
             new_overrides["S3BucketToolsName"] = self.shared_tool_bucket_name
@@ -175,6 +189,15 @@ class Cloudformation:
 
     def deploy_stack(self, stack_name, template_name, parameter_keys,
                      s3_template_source=False, parameter_overrides=None):
+        """
+        Asynchronously deploy a single stack
+        :param stack_name: Name of stack to deploy
+        :param template_name: Filename of template
+        :param parameter_keys: Parameters that need to be passed to template
+        :param s3_template_source: True if we should get this template from S3, default is local
+        :param parameter_overrides: User provided values for parameters
+        :return:
+        """
         template_url = None
         template_body = None
         if s3_template_source:
@@ -195,11 +218,32 @@ class Cloudformation:
             else:
                 raise
 
-    def deploy_stacks(self, stacks_to_deploy, s3_template_source=False, overrides = None):
+    def deploy_stacks(self, stacks_to_deploy, s3_template_source=False, overrides=None):
+        """
+        Deploys several stacks asynchronously, and waits for them all to finish deploying.
+        stacks_to_deploy should be a dictionary that maps stack names to
+        template filenames, and parameters that must be passed to the template. Here is an example:
+        PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA = {
+        "github": {
+                TEMPLATE_NAME_KEY: "github.yaml",
+                PARAMETER_KEYS_KEY: ['S3BucketToolsName',
+                                     'BuildToolsAccountId',
+                                     'ProjectName',
+                                     'SnapshotID',
+                                     'GitHubRepository',
+                                     'GitHubBranchName']
+            }
+        }
+        This will deploy the github stack. The method will try to find each parameter from the following
+        sources (in this order): overrides, snapshot file, project parameter file, output from a stack
+        :param stacks_to_deploy: Dictionary as described above
+        :param s3_template_source: Boolean, true if we should get template from S3. Default is to fetch local templates
+        :param overrides: Any parameter values we would like to provide
+        """
         stack_names = stacks_to_deploy.keys()
         if not self.stacks.stable_stacks(stack_names):
             print("Stacks not stable: {}".format(stack_names))
-            # quit
+            return
         for key in stacks_to_deploy.keys():
             self.deploy_stack(key, stacks_to_deploy[key][TEMPLATE_NAME_KEY],
                               stacks_to_deploy[key][PARAMETER_KEYS_KEY],
@@ -223,3 +267,41 @@ class Cloudformation:
 
     def get_current_snapshot_id(self):
         return self.stacks.get_output("SnapshotID")
+
+    def take_most_recent(self, objects):
+        return sorted(objects, key=lambda o: o["LastModified"], reverse=True)[0]
+
+    def extract_snapshot_name_from_key(self, key_prefix, all_objects):
+        matching_objs = filter(lambda o: key_prefix in o["Key"], all_objects)
+        most_recent_key = self.take_most_recent(matching_objs)["Key"]
+        return most_recent_key.replace(key_prefix, "")
+
+    def get_docker_image_suffix_from_ecr(self):
+        return self.ecr.list_images(repositoryName="cbmc")["imageIds"][0]["imageTag"].replace("ubuntu16-gcc-", "")
+
+
+    def get_package_filenames_from_s3(self):
+        object_contents = self.s3.list_objects(Bucket=self.shared_tool_bucket_name, Prefix="package/")["Contents"]
+        batch_pkg = self.extract_snapshot_name_from_key("package/batch/", object_contents)
+        cbmc_pkg = self.extract_snapshot_name_from_key("package/cbmc/", object_contents)
+        lambda_pkg = self.extract_snapshot_name_from_key("package/lambda/", object_contents)
+        viewer_pkg = self.extract_snapshot_name_from_key("package/viewer/", object_contents)
+        template_pkg = self.extract_snapshot_name_from_key("package/template/", object_contents)
+        return {
+            "batch": batch_pkg,
+            "cbmc": cbmc_pkg,
+            "lambda": lambda_pkg,
+            "viewer": viewer_pkg,
+            "templates": template_pkg,
+            "docker": self.get_docker_image_suffix_from_ecr()
+        }
+
+    def update_and_write_snapshot(self):
+        package_filenames = self.get_package_filenames_from_s3()
+        self.snapshot.snapshot["batch"] = package_filenames.get("batch")
+        self.snapshot.snapshot["cbmc"] = package_filenames.get("cbmc")
+        self.snapshot.snapshot["lambda"] = package_filenames.get("lambda")
+        self.snapshot.snapshot["viewer"] = package_filenames.get("viewer")
+        self.snapshot.snapshot["docker"] = package_filenames.get("docker")
+        self.snapshot.snapshot["templates"] = package_filenames.get("templates")
+        self.snapshot.write(self.snapshot_filename)
