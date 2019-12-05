@@ -269,6 +269,13 @@ def merge_repository(sha=None, branch=None, srcdir=None):
     cmd = ['git', 'merge', '--no-edit', checkout]
     run_command(cmd, srcdir)
 
+def checkout_repository(sha=None, branch=None, srcdir=None):
+    checkout = sha or branch
+    if checkout is None:
+        return
+    cmd = ['git', 'checkout', checkout]
+    run_command(cmd, srcdir)
+
 ################################################################
 
 def find_proof_groups(group_names, root='.'):
@@ -401,7 +408,7 @@ def source_prepare():
         cbmc_ci_github.update_status("pending", "Proof jobs starting", None, "Status pending", arg.id, arg.sha, False)
         base_name = repository_basename(arg.repository)
         clone_repository(arg.repository, base_name)
-        merge_repository(arg.sha, arg.branch, base_name)
+        checkout_repository(arg.sha, arg.branch, base_name)
         generate_cbmc_makefiles(PROOF_MARKERS, base_name)
         generate_tarfile(arg.tarfile_name, base_name)
         upload_tarfile_to_s3(arg.tarfile_name, arg.bucket_proofs, arg.tarfile_path)
