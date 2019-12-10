@@ -9,6 +9,7 @@ from tools_account_image_manager import ToolsAccountImageManager
 
 class CiManager:
     DOUBLE_ASSIGNMENT_ERROR = "Cannot assign value in both file and command line argument"
+
     def __init__(self):
         self.args = self.parse_args()
         self.promote_from_profile = None
@@ -28,12 +29,17 @@ class CiManager:
         if self.args.promote_from_profile:
             self.promote_from_profile = self.args.promote_from_profile
 
+        self.cloudfront_profile = self.args.cloudfront_profile
+
         self.snapshot_filename = self.args.snapshot
         self.build_tools_image_filename = self.args.build_tools_image_filename
         self.project_params_filename = self.args.project_params
 
-        self.snapshot_deployer = SnapshotDeployer(self.build_tools_profile, self.target_profile,
-                                                  self.snapshot_filename, self.project_params_filename)
+        self.snapshot_deployer = SnapshotDeployer(build_tools_profile=self.build_tools_profile,
+                                                  proof_profile=self.target_profile,
+                                                  cloudfront_profile=self.cloudfront_profile,
+                                                  snapshot_filename=self.snapshot_filename,
+                                                  parameters_filename=self.project_params_filename)
 
         if self.promote_from_profile:
             self.promote_source_cloudformation = Cloudformation(self.promote_from_profile)
@@ -58,6 +64,13 @@ class CiManager:
                          The AWS account profile for the build account
                          (defaults to prod account)."""
                          )
+
+        arg.add_argument('--cloudfront-profile',
+                         metavar='PROFILE',
+                         help="""
+                         This is an optional parameter for the AWS profile where we want to deploy our Cloudfront 
+                         distribution. If this isn't provided we simply don't deploy Cloudfront
+                         """)
 
         arg.add_argument('--promote-from-profile',
                          metavar='PROFILE',
@@ -117,6 +130,10 @@ class CiManager:
                          metavar='SNAPSHOTID',
                          help='Snapshot ID to deploy in proof account')
 
+        arg.add_argument('--debug-change',
+                         action='store_true',
+                         help='Run debug flow')
+
         arg.add_argument('--verbose',
                          action='store_true',
                          help='Verbose output.'
@@ -136,6 +153,28 @@ class CiManager:
             logging.basicConfig(level=logging.DEBUG)
         logging.info('Arguments: %s', args)
         return args
+
+    def debug_change(self):
+        """
+        This is a flow to quickly deploy the whole stack for the purposes of debugging. It generates a new
+        build tool and proof image and deploys both, but does not trigger all the builds. This way, you only
+        wait for the pipelines that you actually changed
+        :return:
+        """
+        tool_image_manager = ToolsAccountImageManager(self.build_tools_profile,
+                                                      image_filename=self.build_tools_image_filename)
+        build_tools_image_id = tool_image_manager.generate_new_image_from_latest()
+        self.snapshot_deployer.deploy_globals(build_tools_image_id=build_tools_image_id)
+        self.snapshot_deployer.deploy_build_tools(build_tools_image_id=build_tools_image_id)
+
+        snapshot_id = self.snapshot_deployer.create_new_snapshot()
+        self.snapshot_deployer.reload_all_snapshots(snapshot_id)
+        self.snapshot_deployer.add_proof_account_to_shared_bucket_policy(snapshot_id)
+        self.snapshot_deployer.deploy_proof_account_github(snapshot_id)
+        self.snapshot_deployer.deploy_proof_account_stacks(snapshot_id)
+        self.snapshot_deployer.deploy_cloudfront_stacks(snapshot_id)
+
+
 
     def create_new_build_tools_image(self):
         self.snapshot_deployer.trigger_all_builds()
@@ -166,6 +205,9 @@ class CiManager:
         self.snapshot_deployer.deploy_proof_account_github(snapshot_id)
         self.snapshot_deployer.deploy_proof_account_stacks(snapshot_id)
 
+    def deploy_cloudfront(self, snapshot_id):
+        self.snapshot_deployer.deploy_cloudfront_stacks(snapshot_id)
+
     def run(self):
         # If we are creating a brand new shared account, we must deploy from local YAMLs instead of
         # using a build tools image. This should only be used to boostrap a new account, and we should immediately
@@ -190,6 +232,7 @@ class CiManager:
         snapshot_id = None
         if self.args.new_proof_account_snapshot:
             snapshot_id = self.create_new_proof_account_snapshot()
+            self.snapshot_deployer.reload_all_snapshots(snapshot_id)
             print(json.dumps({
                 "snapshot-id": snapshot_id,
                 "status": "Success"
@@ -213,6 +256,12 @@ class CiManager:
             print(json.dumps({
                 "status": "Success"
             }))
+            if self.cloudfront_profile:
+                self.deploy_cloudfront(snapshot_id)
+
+        if self.args.debug_change:
+            self.debug_change()
+
 
 
 if __name__ == '__main__':

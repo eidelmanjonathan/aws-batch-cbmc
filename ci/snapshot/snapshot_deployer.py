@@ -104,7 +104,14 @@ class SnapshotDeployer:
 
     }
 
-    def __init__(self, build_tools_profile=None, proof_profile=None, snapshot_filename=None, parameters_filename=None):
+    CLOUDFRONT_CLOUDFORMATION_DATA = {
+        "proof-results-cloudfront": {
+            TEMPLATE_NAME_KEY: "cloudfront.yaml",
+            PARAMETER_KEYS_KEY: ['S3BucketProofs']
+        }
+    }
+
+    def __init__(self, build_tools_profile=None, proof_profile=None, cloudfront_profile=None, snapshot_filename=None, parameters_filename=None):
         if not build_tools_profile:
             raise Exception("Cannot deploy stacks with no build tools profile")
         if not snapshot_filename:
@@ -118,6 +125,12 @@ class SnapshotDeployer:
             self.proof_account = Cloudformation(proof_profile,snapshot_filename,
                                                 project_params_filename=parameters_filename,
                                                 shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name)
+
+        # Cloudfront is often deployed in a separate region, so it will have its own AWS profile
+        if cloudfront_profile:
+            self.cloudfront_account = Cloudformation(cloudfront_profile, snapshot_filename,
+                                                     project_params_filename=parameters_filename,
+                                                     shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name)
 
     @staticmethod
     def parse_snapshot_id(output):
@@ -177,6 +190,13 @@ class SnapshotDeployer:
                                            SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
                                            PROOF_ACCOUNT_ID_TO_ADD_KEY: self.proof_account.account_id
                                        })
+    def deploy_cloudfront_stacks(self, snapshot_id):
+        self.cloudfront_account.deploy_stacks(SnapshotDeployer.CLOUDFRONT_CLOUDFORMATION_DATA,
+                                       s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
+                                       overrides={
+                                           SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
+                                           "S3BucketProofs": self.proof_account.get_proof_s3_bucket_name()
+                                       })
 
     def create_new_snapshot(self):
         cmd = './snapshot-create --profile {} --snapshot {}'
@@ -201,3 +221,10 @@ class SnapshotDeployer:
 
     def get_current_snapshot_id(self):
         return self.proof_account.get_current_snapshot_id()
+
+    def reload_all_snapshots(self, snapshot_id):
+        if self.proof_account:
+            self.proof_account.load_local_snapshot(snapshot_id)
+        self.build_tools.load_local_snapshot(snapshot_id)
+        if self.cloudfront_account:
+            self.cloudfront_account.load_local_snapshot(snapshot_id)
