@@ -2,7 +2,7 @@ import subprocess
 import time
 
 from cloudformation import TEMPLATE_NAME_KEY, SNAPSHOT_ID_OVERRIDE_KEY, BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, \
-    PROOF_ACCOUNT_ID_TO_ADD_KEY
+    PROOF_ACCOUNT_ID_TO_ADD_KEY, BUILD_TOOLS_IMAGE_ID_KEY
 from cloudformation import PARAMETER_KEYS_KEY
 
 from cloudformation import Cloudformation
@@ -141,21 +141,38 @@ class SnapshotDeployer:
         result.check_returncode()
         return result.stdout
 
-    def deploy_globals(self):
-        self.build_tools.deploy_stacks(SnapshotDeployer.GLOBALS_CLOUDFORMATION_DATA)
+    def deploy_globals(self, build_tools_image_id=None):
+        # If we are deploying a particular image
+        s3_template_source = Cloudformation.BUILD_TOOLS_IMAGE_S3_SOURCE if build_tools_image_id else None
+        param_overrides = {
+            BUILD_TOOLS_IMAGE_ID_KEY: build_tools_image_id
+        } if build_tools_image_id else None
+        self.build_tools.deploy_stacks(SnapshotDeployer.GLOBALS_CLOUDFORMATION_DATA,
+                                       s3_template_source=s3_template_source,
+                                       overrides=param_overrides)
 
-    def deploy_build_tools(self, snapshot_id):
-        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_CLOUDFORMATION_DATA, s3_template_source=True,
-                                       overrides={
-                                           "SnapshotID": snapshot_id
-                                       })
+    def deploy_build_tools(self, build_tools_image_id=None):
+        s3_template_source = Cloudformation.BUILD_TOOLS_IMAGE_S3_SOURCE if build_tools_image_id else None
+        param_overrides = {
+            BUILD_TOOLS_IMAGE_ID_KEY: build_tools_image_id
+        } if build_tools_image_id else None
+        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_CLOUDFORMATION_DATA,
+                                       s3_template_source=s3_template_source,
+                                       overrides=param_overrides)
 
         for pipeline in SnapshotDeployer.BUILD_PIPELINES:
             self.build_tools.wait_for_pipeline_completion(pipeline)
             self.build_tools.update_and_write_snapshot()
 
+    def trigger_all_builds(self):
+        for pipeline in SnapshotDeployer.BUILD_PIPELINES:
+            self.build_tools.trigger_pipeline(pipeline)
+        for pipeline in SnapshotDeployer.BUILD_PIPELINES:
+            self.build_tools.wait_for_pipeline_completion(pipeline)
+
     def add_proof_account_to_shared_bucket_policy(self, snapshot_id):
-        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_BUCKET_POLICY, s3_template_source=True,
+        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_BUCKET_POLICY,
+                                       s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                        overrides={
                                            SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
                                            PROOF_ACCOUNT_ID_TO_ADD_KEY: self.proof_account.account_id
@@ -168,7 +185,7 @@ class SnapshotDeployer:
 
     def deploy_proof_account_github(self, snapshot_id):
         self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
-                                         s3_template_source=True,
+                                         s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
                                              SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
                                              BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
@@ -176,7 +193,7 @@ class SnapshotDeployer:
 
     def deploy_proof_account_stacks(self, snapshot_id):
         self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA,
-                                         s3_template_source=True,
+                                         s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
                                              SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
                                              BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id

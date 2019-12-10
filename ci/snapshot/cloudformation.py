@@ -18,6 +18,7 @@ PARAMETER_OVERRIDES_KEY = "parameter_overrides"
 SNAPSHOT_ID_OVERRIDE_KEY = "SnapshotID"
 BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY = "BuildToolsAccountId"
 PROOF_ACCOUNT_ID_TO_ADD_KEY = "ProofAccountIdToAdd"
+BUILD_TOOLS_IMAGE_ID_KEY = "build-tools-image-id"
 
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
                               "There should only be one statement. Bucket policy should only be updated " \
@@ -29,6 +30,8 @@ class Cloudformation:
     snapshot files
     """
     CAPABILITIES = ['CAPABILITY_NAMED_IAM']
+    BUILD_TOOLS_IMAGE_S3_SOURCE = "BUILD_TOOLS_IMAGE_S3_SOURCE"
+    PROOF_ACCOUNT_IMAGE_S3_SOURCE = "PROOF_ACCOUNT_IMAGE_S3_SOURCE"
 
     def __init__(self, profile, snapshot_filename=None, project_params_filename=None, shared_tool_bucket_name = None):
         self.profile = profile
@@ -175,20 +178,29 @@ class Cloudformation:
             self._update_stack(stack_name, parameters, template_body=template_body,
                                template_url=template_url)
 
-    def _get_s3_url_for_template(self, template_name, parameter_overrides = None):
-        snapshot_id = parameter_overrides.get("SnapshotID")
-        snapshot_id = snapshot_id if snapshot_id else self.snapshot.get_parameter('SnapshotID')
-
-        if not snapshot_id:
-            raise Exception("Cannot fetch templates from S3 with no snapshot ID")
-        return ("https://s3.amazonaws.com/{}/snapshot/snapshot-{}/{}"
+    def _get_s3_url_for_template(self, template_name, s3_template_source, parameter_overrides=None):
+        if s3_template_source == Cloudformation.BUILD_TOOLS_IMAGE_S3_SOURCE:
+            build_tools_image_id = parameter_overrides.get(BUILD_TOOLS_IMAGE_ID_KEY)
+            if not build_tools_image_id:
+                raise Exception("Cannot fetch build tool templates, no image id provided")
+            return ("https://s3.amazonaws.com/{}/tool-account-images/image-{}/{}"
                          .format(self.shared_tool_bucket_name,
-                                 snapshot_id,
+                                 build_tools_image_id,
                                  template_name))
+        elif s3_template_source == Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE:
+            snapshot_id = parameter_overrides.get("SnapshotID")
+            snapshot_id = snapshot_id if snapshot_id else self.snapshot.get_parameter('SnapshotID')
+
+            if not snapshot_id:
+                raise Exception("Cannot fetch proof account templates from S3 with no snapshot ID")
+            return ("https://s3.amazonaws.com/{}/snapshot/snapshot-{}/{}"
+                             .format(self.shared_tool_bucket_name,
+                                     snapshot_id,
+                                     template_name))
 
 
     def deploy_stack(self, stack_name, template_name, parameter_keys,
-                     s3_template_source=False, parameter_overrides=None):
+                     s3_template_source=None, parameter_overrides=None):
         """
         Asynchronously deploy a single stack
         :param stack_name: Name of stack to deploy
@@ -201,7 +213,7 @@ class Cloudformation:
         template_url = None
         template_body = None
         if s3_template_source:
-            template_url = self._get_s3_url_for_template(template_name, parameter_overrides)
+            template_url = self._get_s3_url_for_template(template_name, s3_template_source, parameter_overrides)
             print(template_url)
 
         else:
@@ -218,7 +230,7 @@ class Cloudformation:
             else:
                 raise
 
-    def deploy_stacks(self, stacks_to_deploy, s3_template_source=False, overrides=None):
+    def deploy_stacks(self, stacks_to_deploy, s3_template_source=None, overrides=None):
         """
         Deploys several stacks asynchronously, and waits for them all to finish deploying.
         stacks_to_deploy should be a dictionary that maps stack names to
@@ -251,7 +263,8 @@ class Cloudformation:
                               parameter_overrides=overrides)
         self.stacks.wait_for_stable_stacks(stack_names)
 
-
+    def trigger_pipeline(self, pipeline_name):
+        self.pipeline_client.start_pipeline_execution(name=pipeline_name)
     def _is_pipeline_complete(self, pipeline_name):
         pipeline_state = self.pipeline_client.get_pipeline_state(name=pipeline_name)
         return all("latestExecution" in state.keys()

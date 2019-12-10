@@ -4,6 +4,7 @@ import logging
 
 from cloudformation import Cloudformation
 from snapshot_deployer import SnapshotDeployer
+from tools_account_image_manager import ToolsAccountImageManager
 
 
 class CiManager:
@@ -28,10 +29,12 @@ class CiManager:
             self.promote_from_profile = self.args.promote_from_profile
 
         self.snapshot_filename = self.args.snapshot
+        self.build_tools_image_filename = self.args.build_tools_image_filename
         self.project_params_filename = self.args.project_params
 
         self.snapshot_deployer = SnapshotDeployer(self.build_tools_profile, self.target_profile,
                                                   self.snapshot_filename, self.project_params_filename)
+
         if self.promote_from_profile:
             self.promote_source_cloudformation = Cloudformation(self.promote_from_profile)
 
@@ -75,13 +78,34 @@ class CiManager:
                          default="snapshot.json",
                          help='Snapshot file to deploy from filesystem'
                          )
+
+        arg.add_argument('--bootstrap-build-tools-account',
+                         action='store_true',
+                         help='Use local yaml to bootstrap a new build tools account')
+
+        arg.add_argument('--build-tools-image-filename',
+                         metavar='FILE',
+                         default='build-tools-image.json',
+                         help='Build tools image file')
+
+        arg.add_argument('--new-build-tools-image',
+                         action='store_true',
+                         help='Generate new build tools image')
+
+        arg.add_argument('--deploy-build-tools-image',
+                         action='store_true',
+                         help='Deploy a build tools image')
+        arg.add_argument('--build-tools-image-id',
+                         metavar='IMAGEID',
+                         help='build tools image ID we want to deploy')
+
         arg.add_argument('--project-params',
                          metavar='FILE',
                          default="parameters.json",
                          help='JSON file with project parameters'
                          )
 
-        arg.add_argument('--new-snapshot',
+        arg.add_argument('--new-proof-account-snapshot',
                          action='store_true',
                          help='Update build account and generate new snapshot')
 
@@ -113,15 +137,28 @@ class CiManager:
         logging.info('Arguments: %s', args)
         return args
 
-    def create_new_snapshot(self):
+    def create_new_build_tools_image(self):
+        self.snapshot_deployer.trigger_all_builds()
+        tool_image_manager = ToolsAccountImageManager(self.build_tools_profile,
+                                                      image_filename=self.build_tools_image_filename)
+        return tool_image_manager.generate_new_image_from_latest()
+
+    def deploy_build_tools_image(self, build_tools_image_id):
+        self.snapshot_deployer.deploy_globals(build_tools_image_id=build_tools_image_id)
+        self.snapshot_deployer.deploy_build_tools(build_tools_image_id=build_tools_image_id)
+
+    def deploy_build_tools_local_yamls(self):
+        self.snapshot_deployer.deploy_globals()
+        self.snapshot_deployer.deploy_build_tools()
+
+    def create_new_proof_account_snapshot(self):
         """
         Updates the shared build account with the latest CloudFormation Yamls, triggers builds for all of the
         tools, and then creates a new snapshot with all of the latest builds
         :returns: New snapshot ID
         """
-        self.snapshot_deployer.deploy_globals()
+        self.snapshot_deployer.trigger_all_builds()
         snapshot_id = self.snapshot_deployer.create_new_snapshot()
-        self.snapshot_deployer.deploy_build_tools(snapshot_id)
         return snapshot_id
 
     def deploy_snapshot(self, snapshot_id):
@@ -130,9 +167,29 @@ class CiManager:
         self.snapshot_deployer.deploy_proof_account_stacks(snapshot_id)
 
     def run(self):
+        # If we are creating a brand new shared account, we must deploy from local YAMLs instead of
+        # using a build tools image. This should only be used to boostrap a new account, and we should immediately
+        # create an image after that
+        if self.args.bootstrap_build_tools_account:
+            self.deploy_build_tools_local_yamls()
+
+        build_tools_image_id = None
+        if self.args.new_build_tools_image:
+            build_tools_image_id = self.create_new_build_tools_image()
+            print(json.dumps({
+                "build-tools-image-id": build_tools_image_id,
+                "status": "Success"
+            }))
+
+        if self.args.deploy_build_tools_image:
+            build_tools_image_id = build_tools_image_id if build_tools_image_id else self.args.build_tools_image_id
+            if not build_tools_image_id:
+                raise Exception("Must provide build tools image id")
+            self.deploy_build_tools_image(build_tools_image_id)
+
         snapshot_id = None
-        if self.args.new_snapshot:
-            snapshot_id = self.create_new_snapshot()
+        if self.args.new_proof_account_snapshot:
+            snapshot_id = self.create_new_proof_account_snapshot()
             print(json.dumps({
                 "snapshot-id": snapshot_id,
                 "status": "Success"
