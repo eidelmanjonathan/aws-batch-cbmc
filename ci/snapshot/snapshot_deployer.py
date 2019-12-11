@@ -1,3 +1,4 @@
+import copy
 import subprocess
 import time
 
@@ -78,6 +79,19 @@ class SnapshotDeployer:
                                  'BuildToolsAccountId',
                                  'ProjectName',
                                  'SnapshotID',
+                                 'GitHubRepository',
+                                 'GitHubBranchName']
+        }
+    }
+
+    PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA_CLOUDFRONT = {
+        "github": {
+            TEMPLATE_NAME_KEY: "github.yaml",
+            PARAMETER_KEYS_KEY: ['S3BucketToolsName',
+                                 'BuildToolsAccountId',
+                                 'ProjectName',
+                                 'SnapshotID',
+                                 'CloudfrontUrl',
                                  'GitHubRepository',
                                  'GitHubBranchName']
         }
@@ -203,12 +217,18 @@ class SnapshotDeployer:
         output = SnapshotDeployer.run(cmd.format(self.build_tools.profile, self.snapshot_filename))
         return SnapshotDeployer.parse_snapshot_id(output)
 
-    def deploy_proof_account_github(self, snapshot_id):
-        self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
+    def deploy_proof_account_github(self, snapshot_id, cloudfront_url = None):
+        if cloudfront_url:
+            deployer_info = copy.deepcopy(SnapshotDeployer.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA_CLOUDFRONT)
+        else:
+            deployer_info = copy.deepcopy(SnapshotDeployer.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA)
+
+        self.proof_account.deploy_stacks(deployer_info,
                                          s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
                                              SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
-                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
+                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
+                                             "CloudfrontUrl": cloudfront_url
                                          })
 
     def deploy_proof_account_stacks(self, snapshot_id):

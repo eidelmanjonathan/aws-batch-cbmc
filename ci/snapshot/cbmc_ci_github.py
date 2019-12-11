@@ -17,8 +17,8 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname):
             'description': desc}
     if jobname:
         kwds['target_url'] = (
-            "https://s3.console.aws.amazon.com/s3/buckets/{}/{}/out/"
-            .format(os.environ['S3_BUCKET_PROOFS'], jobname)
+            "https://{}/{}/out/html/index.html"
+            .format(os.environ['CLOUDFRONT_URL'], jobname)
             )
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')

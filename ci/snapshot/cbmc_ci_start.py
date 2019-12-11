@@ -303,5 +303,9 @@ def bookkeep(tmp_dir, job_name, content, file_name):
     with open(file_path, "w") as file_obj:
         file_obj.write(str(content))
     s3 = boto3.client('s3')
-    s3.upload_file(
-        Bucket=bkt_proofs, Key=job_name + "/" + file_name, Filename=file_path)
+    s3.upload_file(Bucket=bkt_proofs, Key=job_name + "/" + file_name, Filename=file_path,
+                   ExtraArgs={
+                       "Metadata": {
+                        "x-amz-meta-cbmc": "True"
+                       }
+                   })

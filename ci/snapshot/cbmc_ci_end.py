@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Lambda function invoked in response to a Batch job changing state."""
-
+import _thread
 import re
 import os
 import traceback
@@ -15,6 +15,7 @@ import clog_writert
 
 # S3 Bucket name for storing CBMC Batch packages and outputs
 bkt = os.environ['S3_BUCKET_PROOFS']
+cloudfront_url = os.environ['CLOUDFRONT_URL']
 
 def read_from_s3(s3_path):
     """Read from a file in S3 Bucket
@@ -24,6 +25,18 @@ def read_from_s3(s3_path):
     s3 = boto3.client('s3')
     return s3.get_object(Bucket=bkt, Key=s3_path)['Body'].read()
 
+def set_s3_metadata(s3, f):
+    s3.copy_object(Key=f["Key"],
+                   Bucket=bkt,
+                   CopySource={"Bucket": bkt, "Key": f["Key"]},
+                   Metadata={"cbmc": "True", "Content-Type": "text/html"},
+                   MetadataDirective="REPLACE")
+
+def set_metadata(s3_path):
+    s3 = boto3.client('s3')
+    all_files = s3.list_objects(Bucket=bkt, Prefix=s3_path)
+    for f in all_files["Contents"]:
+        _thread.start_new_thread(set_s3_metadata, (s3, f))
 
 class Job_name_info:
 
@@ -39,6 +52,9 @@ class Job_name_info:
 
     def is_cbmc_property_job(self):
         return self.is_cbmc_batch_job and self.type == "property"
+
+    def is_cbmc_report_job(self):
+        return self.is_cbmc_batch_job and self.type == "report"
 
 
     @staticmethod
@@ -147,6 +163,12 @@ def lambda_handler(event, context):
                         response['status'] = clog_writert.FAILED
                 else:
                     response['status'] = clog_writert.FAILED
+            elif job_name_info.is_cbmc_report_job():
+                print("This is a report job")
+                update_status("success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                print("status updated")
+                # set_metadata(s3_dir + "/out/html/index.html")
+                response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
             else:
                 response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
 

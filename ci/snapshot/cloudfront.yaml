@@ -35,27 +35,36 @@ Resources:
       Type: AWS::Lambda::Function
       Properties:
         Role: !GetAtt LambdaEdgeFunctionRole.Arn
-        Runtime: nodejs8.10
-        Handler: index.handler
+        Runtime: python3.7
+        Handler: index.lambda_handler
         Timeout: 5
 #        AutoPublishAlias: live
         Code:
           ZipFile: !Sub |
-            'use strict';
-            exports.handler = (event, context, callback) => {
-                //Get contents of response
-                const response = event.Records[0].cf.response;
-                const headers = response.headers;
-            //Set new headers
-             headers['strict-transport-security'] = [{key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubdomains; preload'}];
-             headers['content-security-policy'] = [{key: 'Content-Security-Policy', value: "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"}];
-             headers['x-content-type-options'] = [{key: 'X-Content-Type-Options', value: 'nosniff'}];
-             headers['x-frame-options'] = [{key: 'X-Frame-Options', value: 'DENY'}];
-             headers['x-xss-protection'] = [{key: 'X-XSS-Protection', value: '1; mode=block'}];
-             headers['referrer-policy'] = [{key: 'Referrer-Policy', value: 'same-origin'}];
-                //Return modified response
-                callback(null, response);
-            };
+            import boto3
+            PROOFS_BKT = "${S3BucketProofs}"
+
+            def lambda_handler(event, context):
+              request = event['Records'][0]['cf']['request']
+              headers = request['headers']
+              print(event)
+              s3_filename = request['uri']
+              print(s3_filename)
+              s3_obj = boto3.client("s3").get_object(Bucket=PROOFS_BKT, Key=s3_filename[1:])
+              print(s3_obj)
+              if "Metadata" in s3_obj.keys() and  "cbmc" in s3_obj['Metadata'].keys() and  s3_obj['Metadata']["cbmc"] == "True":
+                print("This file is good!")
+              else:
+                raise Exception("Tried to access bad file!")
+
+
+              headers['strict-transport-security'] = [{'key': 'Strict-Transport-Security', 'value': 'max-age=63072000; includeSubdomains; preload'}]
+              headers['content-security-policy'] = [{'key': 'Content-Security-Policy', 'value': "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"}]
+              headers['x-content-type-options'] = [{'key': 'X-Content-Type-Options', 'value': 'nosniff'}]
+              headers['x-frame-options'] = [{'key': 'X-Frame-Options', 'value': 'DENY'}]
+              headers['x-xss-protection'] = [{'key': 'X-XSS-Protection', 'value': '1; mode=block'}]
+              headers['referrer-policy'] = [{'key': 'Referrer-Policy', 'value': 'same-origin'}]
+              return request
   IndexLambdaVersion:
     Type: Custom::LatestLambdaVersion
     Properties:
@@ -135,7 +144,7 @@ Resources:
               Forward: none
           ViewerProtocolPolicy: redirect-to-https
           LambdaFunctionAssociations:
-            - EventType: origin-response
+            - EventType: viewer-request
               LambdaFunctionARN: !GetAtt IndexLambdaVersion.FunctionArn
         PriceClass: PriceClass_All
         ViewerCertificate:
@@ -161,4 +170,22 @@ Resources:
                 Service:
                   - "lambda.amazonaws.com"
                   - "edgelambda.amazonaws.com"
+        Policies:
+          - PolicyName: !Sub "cloudfront-lambda-policy-${AWS::Region}"
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Effect: Allow
+                  Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                - Action:
+                    - s3:GetObject
+                  Effect: Allow
+                  Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketProofs}", "*"]]
 
+Outputs:
+  CloudfrontUrl:
+    Value: !GetAtt WebsiteCloudfront.DomainName

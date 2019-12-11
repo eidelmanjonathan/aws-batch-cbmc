@@ -288,6 +288,12 @@ class Cloudformation:
     def get_proof_s3_bucket_name(self):
         return self.stacks.get_output("S3BucketProofs")
 
+    def get_cloudfront_url(self):
+        return self.stacks.get_output("CloudfrontUrl")
+
+    def set_cloudfront_url(self, url):
+        self.stacks.get_output()
+
     def take_most_recent(self, objects):
         return sorted(objects, key=lambda o: o["LastModified"], reverse=True)[0]
 

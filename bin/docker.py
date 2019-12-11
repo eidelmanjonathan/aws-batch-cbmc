@@ -67,7 +67,7 @@ def get_buckets(opts, copysrc=True):
 def put_buckets(opts):
     """Copy container output to bucket."""
 
-    s3.sync_directory_to_bucket(opts['wsdir'], opts['outbucket'])
+    s3.sync_directory_to_bucket(opts['wsdir'], opts['outbucket'], metadata={"cbmc":"True"})
 
 def checkpoint_file(filename, fileobj, s3path, region):
     """Write a checkpoint of an open file to a bucket"""

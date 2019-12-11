@@ -173,8 +173,8 @@ class CiManager:
         self.snapshot_deployer.deploy_proof_account_github(snapshot_id)
         self.snapshot_deployer.deploy_proof_account_stacks(snapshot_id)
         self.snapshot_deployer.deploy_cloudfront_stacks(snapshot_id)
-
-
+        cloudfront_url = self.snapshot_deployer.cloudfront_account.get_cloudfront_url()
+        self.snapshot_deployer.deploy_proof_account_github(snapshot_id, cloudfront_url=cloudfront_url)
 
     def create_new_build_tools_image(self):
         self.snapshot_deployer.trigger_all_builds()
@@ -258,10 +258,11 @@ class CiManager:
             }))
             if self.cloudfront_profile:
                 self.deploy_cloudfront(snapshot_id)
+                cloudfront_url = self.snapshot_deployer.cloudfront_account.get_cloudfront_url()
+                self.snapshot_deployer.deploy_proof_account_github(snapshot_id, cloudfront_url=cloudfront_url)
 
         if self.args.debug_change:
             self.debug_change()
-
 
 
 if __name__ == '__main__':
