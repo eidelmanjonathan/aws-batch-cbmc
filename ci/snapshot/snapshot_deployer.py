@@ -184,3 +184,10 @@ class SnapshotDeployer:
 
     def get_current_snapshot_id(self):
         return self.proof_account.get_current_snapshot_id()
+
+    def reload_all_snapshots(self, snapshot_id):
+        if self.proof_account:
+            self.proof_account.load_local_snapshot(snapshot_id)
+        self.build_tools.load_local_snapshot(snapshot_id)
+        if self.cloudfront_account:
+            self.cloudfront_account.load_local_snapshot(snapshot_id)

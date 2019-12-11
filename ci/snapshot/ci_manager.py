@@ -133,6 +133,7 @@ class CiManager:
         snapshot_id = None
         if self.args.new_snapshot:
             snapshot_id = self.create_new_snapshot()
+            self.snapshot_deployer.reload_all_snapshots(snapshot_id)
             print(json.dumps({
                 "snapshot-id": snapshot_id,
                 "status": "Success"
