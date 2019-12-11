@@ -50,6 +50,10 @@ class Cloudformation:
         self.shared_tool_bucket_name = shared_tool_bucket_name if shared_tool_bucket_name \
             else self.stacks.get_output('S3BucketName')
 
+    def load_local_snapshot(self, snapshot_id):
+        self.snapshot_filename = "snapshot-{}/snapshot-{}.json".format(snapshot_id, snapshot_id)
+        self.snapshot = Snapshot(filename=self.snapshot_filename)
+
     def _get_value(self, key):
         if key == 'GitHubToken':
             key = 'GitHubCommitStatusPAT'

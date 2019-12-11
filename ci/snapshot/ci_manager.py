@@ -190,6 +190,7 @@ class CiManager:
         snapshot_id = None
         if self.args.new_proof_account_snapshot:
             snapshot_id = self.create_new_proof_account_snapshot()
+            self.snapshot_deployer.reload_all_snapshots(snapshot_id)
             print(json.dumps({
                 "snapshot-id": snapshot_id,
                 "status": "Success"
