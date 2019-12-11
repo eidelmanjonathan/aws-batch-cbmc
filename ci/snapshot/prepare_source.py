@@ -262,6 +262,13 @@ def clone_repository(url, srcdir):
     cmd = ['git', 'fetch', 'origin']
     run_command(cmd, srcdir)
 
+def merge_repository(sha=None, branch=None, srcdir=None):
+    checkout = sha or branch
+    if checkout is None:
+        return
+    cmd = ['git', 'merge', '--no-edit', checkout]
+    run_command(cmd, srcdir)
+
 def checkout_repository(sha=None, branch=None, srcdir=None):
     checkout = sha or branch
     if checkout is None:
