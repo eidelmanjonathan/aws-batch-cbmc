@@ -303,11 +303,18 @@ def prepare_repository(log_json):
 def prepare_commit(log_json):
     # Log message format is
     # INFO: Running "git checkout COMMIT" in "DIR"
-    messages = [event['message'].strip() for event in log_json['events']
+    merge_messages = [event['message'].strip() for event in log_json['events']
+                if event['message'].startswith('INFO: Running "git merge')]
+    checkout_messages = [event['message'].strip() for event in log_json['events']
                 if event['message'].startswith('INFO: Running "git checkout')]
-    assert len(messages) == 1
-    match = re.search('"git checkout (.+)" in ".+"', messages[0])
-    commit = match.group(1)
+    assert len(merge_messages) + len(checkout_messages) == 1
+
+    if checkout_messages:
+        match = re.search('"git checkout (.+)" in ".+"', checkout_messages[0])
+        commit = match.group(1)
+    elif merge_messages:
+        match = re.search('"git merge --no-edit (.+)" in ".+"', merge_messages[0])
+        commit = match.group(1)
     logging.info('Found commit in prepare log:  %s', commit)
     return commit
 
@@ -370,7 +377,7 @@ class InvokeLog:
         payloads = [{"ts": iso_from_time(log_json['events'][i]['timestamp']), "message": messages[i]} for i in webhooks
                     if (any([commit in messages[i] for commit in commit_list]) if commit_list else True)]
         assert len(payloads) >= 1
-        self.webhooks = [WebHook(payload['message'], payload['ts']) for payload in payloads]
+        self.webhooks = generate_webhooks(payloads)
 
 
     def summary(self, detail=1):
@@ -409,12 +416,29 @@ class InvokeLogs:
 
 ################################################################
 
+def parse_json_fail(field_name, ts):
+    logging.error(
+        f"Unable to parse {field_name} at time {ts}; most likely it is too large to fit in a cloudwatch event")
+
+
+def generate_webhooks(payloads):
+    webhooks = []
+    for payload in payloads:
+        try:
+            webhook = WebHook(payload['message'], payload['ts'])
+            webhooks.append(webhook)
+        except:
+            parse_json_fail('webhook', payload['ts'])
+    return webhooks
+
 class WebHook:
     """Parse the webhook payload."""
 
     def __init__(self, payload, timestamp=None):
 
         if isinstance(payload, str):
+            # Note: may throw exception if payload is mal-formed
+            # as can happen when a message gets truncated.
             webhook = json.loads(payload)
         else:
             webhook = payload
@@ -634,6 +658,7 @@ class ProofResult:
                 'coverage': read_file('coverage.xml'),
                 'report': read_file('report.txt')
             }
+            self.correlation_id = correlation_id_file(client, self.bucket, proof, 'correlation_list.txt', tmpdir)
             self.error = {
                 'build': read_file('build-err.txt'),
                 'property': read_file('cbmc-err.txt'),
@@ -648,6 +673,7 @@ class ProofResult:
 
     def summary(self, detail=1):
         result = {
+            'correlation_id': self.correlation_id,
             'proof_status': self.proof_status,
             'error': self.error
         }
@@ -690,6 +716,7 @@ def cbmc_file(client, bucket, proof, filename, tmpdir):
         logging.error("Unable to read S3 bucket/key: {}/{}  ".format(str(bucket), str(key)))
         return None
 
+
 ################################################################
 
 ################################################################
@@ -697,12 +724,28 @@ def cbmc_file(client, bucket, proof, filename, tmpdir):
 ################################################################
 import time
 
+def correlation_id_file(client, bucket, proof, filename, tmpdir):
+    try:
+        key = '{}/{}'.format(proof, filename)
+        logging.info("Attempting to read S3 key: " + str(key))
+        path = os.path.join(tmpdir, filename)
+        client.download_file(bucket, key, path)
+        with open(path) as data:
+            return json.loads(data.read())[0]
+    except botocore.exceptions.ClientError:
+        logging.error("Unable to read S3 bucket/key: {}/{}  ".format(str(bucket), str(key)))
+        return None
+
+MAX_QUERY_RESULTS = 10000
+
 def await_query_result(client, query_id):
     kwargs = {'queryId': query_id}
     result = client.get_query_results(**kwargs)
     while result['status'] in set(['Scheduled', 'Running']):
         time.sleep(0.5)
         result = client.get_query_results(**kwargs)
+    if len(result['results']) == MAX_QUERY_RESULTS:
+        logging.warning(f'Query results may be truncated for query id: {query_id}')
     logging.info(" done")
     return result
 
@@ -718,11 +761,10 @@ def query_result_to_list_dict(result):
 
 
 def start_query(client, loggroupnames, query, starttime, endtime):
-    # print("limiting query to the first 1000 results")
     kwargs = {'logGroupNames': loggroupnames,
               'startTime': starttime,
               'queryString': query,
-              'limit': 1000}
+              'limit': MAX_QUERY_RESULTS}
     if endtime:
         kwargs['endTime'] = endtime
 
@@ -748,11 +790,18 @@ class CorrelationIds:
         summary_list = []
         for elem in self.correlation_ids:
             dict = {}
-            message = json.loads(elem['@message'])
-            webhook = WebHook(message['event'])
+            try:
+                timestamp = elem['@timestamp']
+                message = json.loads(elem['@message'])
+                webhook = WebHook(message['event'])
+                summary = webhook.summary(detail)
+            except:
+                parse_json_fail('message', timestamp)
+                summary = {}
             dict = {"correlation_id" : elem['correlation_list.0'],
-                    "timestamp" : elem['@timestamp'],
-                    "webhook" : webhook.summary(detail)}
+                    "timestamp" : timestamp,
+                    "webhook" : summary}
+
             summary_list.append(dict)
         summary_list.sort(key=lambda elem: elem['timestamp'])
         return {"correlation_ids" : summary_list}
@@ -847,10 +896,12 @@ def time_elapsed_in_ms(task_tree):
 
 class TaskTreeFailureSummary():
     def __init__(self, session, task_tree, log_groups, start, end, max_log_entries):
+        def sort_event(the_list):
+            return sorted(the_list, key=lambda event: event['msg']['task_name'])
         self.session = session
-        self.failed_events = task_tree.tree_failed_events()
-        self.incomplete_events = task_tree.tree_incomplete_events()
-        self.succeeded_events = task_tree.tree_succeeded_events()
+        self.failed_events = sort_event(task_tree.tree_failed_events())
+        self.incomplete_events = sort_event(task_tree.tree_incomplete_events())
+        self.succeeded_events = sort_event(task_tree.tree_succeeded_events())
         self.log_groups = log_groups
         self.start = start
         self.end = end
@@ -998,8 +1049,13 @@ def create_task_tree(group, correlation_id, start_time, end_time):
     # if we sort the keys in the dict, we have a depth-first view of the tree.
     task_tree = TaskTree("fakeroot")
     for elem in list_dict:
-        msg = json.loads(elem['@message'])
         ts = elem['@timestamp']
+        try:
+            msg = json.loads(elem['@message'])
+        except:
+            parse_json_fail('@message', elem['@timestamp'])
+            msg = {}
+
         task_tree.add_element(msg['correlation_list'], {'ts': ts, 'msg': msg})
 
     # get 'real' root.
@@ -1008,11 +1064,6 @@ def create_task_tree(group, correlation_id, start_time, end_time):
 
 ###########################################################
 
-# Couple of Qs:
-# Make proof queries return sets unless they are given a task id.  Simple; split them into multiple classes.
-#
-# Similarly with proofs.
-#
 
 def main():
     args = create_parser().parse_args()
@@ -1038,9 +1089,13 @@ def main():
         logging.info("Examining proofs: " + str(args.proofs))
         prepare = PrepareLogs(log_groups, args.proofs, start, end)
         proof_results = ProofResults(session, args.proofs)
-        invoke = InvokeLogs(log_groups, prepare.commits, start, end)
 
-        summary = dict(summary, **invoke.summary(args.detail))
+        correlation_ids = CorrelationIds(session, log_groups, start, end)
+        summary = dict(summary, **correlation_ids.summary(args.detail))
+        if not correlation_ids.correlation_ids:
+            invoke = InvokeLogs(log_groups, None, start, end)
+            summary = dict(summary, **invoke.summary(args.detail))
+
         summary = dict(summary, **prepare.summary(args.detail))
         summary = dict(summary, **proof_results.summary(args.detail))
 
