@@ -8,7 +8,7 @@ from cloudformation import PARAMETER_KEYS_KEY
 from cloudformation import Cloudformation
 
 
-class SnapshotDeployer:
+class AccountOrchestrator:
     BUILD_PIPELINES = [
         "Build-CBMC-Linux-Pipeline",
         "Build-Docker-Pipeline",
@@ -147,7 +147,7 @@ class SnapshotDeployer:
         param_overrides = {
             BUILD_TOOLS_IMAGE_ID_KEY: build_tools_image_id
         } if build_tools_image_id else None
-        self.build_tools.deploy_stacks(SnapshotDeployer.GLOBALS_CLOUDFORMATION_DATA,
+        self.build_tools.deploy_stacks(AccountOrchestrator.GLOBALS_CLOUDFORMATION_DATA,
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
 
@@ -156,22 +156,22 @@ class SnapshotDeployer:
         param_overrides = {
             BUILD_TOOLS_IMAGE_ID_KEY: build_tools_image_id
         } if build_tools_image_id else None
-        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_CLOUDFORMATION_DATA,
+        self.build_tools.deploy_stacks(AccountOrchestrator.BUILD_TOOLS_CLOUDFORMATION_DATA,
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
 
-        for pipeline in SnapshotDeployer.BUILD_PIPELINES:
+        for pipeline in AccountOrchestrator.BUILD_PIPELINES:
             self.build_tools.wait_for_pipeline_completion(pipeline)
             self.build_tools.update_and_write_snapshot()
 
     def trigger_all_builds(self):
-        for pipeline in SnapshotDeployer.BUILD_PIPELINES:
+        for pipeline in AccountOrchestrator.BUILD_PIPELINES:
             self.build_tools.trigger_pipeline(pipeline)
-        for pipeline in SnapshotDeployer.BUILD_PIPELINES:
+        for pipeline in AccountOrchestrator.BUILD_PIPELINES:
             self.build_tools.wait_for_pipeline_completion(pipeline)
 
     def add_proof_account_to_shared_bucket_policy(self, snapshot_id):
-        self.build_tools.deploy_stacks(SnapshotDeployer.BUILD_TOOLS_BUCKET_POLICY,
+        self.build_tools.deploy_stacks(AccountOrchestrator.BUILD_TOOLS_BUCKET_POLICY,
                                        s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                        overrides={
                                            SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
@@ -180,11 +180,11 @@ class SnapshotDeployer:
 
     def create_new_snapshot(self):
         cmd = './snapshot-create --profile {} --snapshot {}'
-        output = SnapshotDeployer.run(cmd.format(self.build_tools.profile, self.snapshot_filename))
-        return SnapshotDeployer.parse_snapshot_id(output)
+        output = AccountOrchestrator.run(cmd.format(self.build_tools.profile, self.snapshot_filename))
+        return AccountOrchestrator.parse_snapshot_id(output)
 
     def deploy_proof_account_github(self, snapshot_id):
-        self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
+        self.proof_account.deploy_stacks(AccountOrchestrator.PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
                                          s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
                                              SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
@@ -192,7 +192,7 @@ class SnapshotDeployer:
                                          })
 
     def deploy_proof_account_stacks(self, snapshot_id):
-        self.proof_account.deploy_stacks(SnapshotDeployer.PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA,
+        self.proof_account.deploy_stacks(AccountOrchestrator.PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA,
                                          s3_template_source=Cloudformation.PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
                                              SNAPSHOT_ID_OVERRIDE_KEY: snapshot_id,
@@ -208,3 +208,4 @@ class SnapshotDeployer:
         self.build_tools.load_local_snapshot(snapshot_id)
         if self.cloudfront_account:
             self.cloudfront_account.load_local_snapshot(snapshot_id)
+

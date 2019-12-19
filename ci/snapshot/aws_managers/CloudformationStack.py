@@ -61,6 +61,8 @@ class Stacks():
         if stack is None and output is not None:
             # assuming output appears in only one stack (or output values equal)
             for stk in self.stack:
+                print("Checking stack {}".format(stk))
+
                 if output in self.stack[stk]['outputs']:
                     return self.stack[stk]['outputs'][output]
             return None

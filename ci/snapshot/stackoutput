@@ -4,10 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import botocore_amazon.monkeypatch
 import boto3
 
-import stackst
+from aws_managers import CloudformationStack
+
 
 def create_parser():
     arg = argparse.ArgumentParser(description='Get AWS stack output values.')
@@ -29,7 +29,7 @@ def create_parser():
 def main():
     args = create_parser().parse_args()
     session = boto3.session.Session(profile_name=args.profile)
-    stacks = stackst.Stacks(session)
+    stacks = CloudformationStack.Stacks(session)
     result = stacks.get_output(args.output_name, args.stack_name)
     print(result)
 

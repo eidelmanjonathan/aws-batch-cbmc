@@ -4,10 +4,9 @@ import shutil
 import tarfile
 import time
 
-import botocore_amazon.monkeypatch
 import boto3
 
-from stackst import Stacks
+from aws_managers.CloudformationStack import Stacks
 
 
 class ToolsAccountImageManager:

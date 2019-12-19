@@ -3,8 +3,8 @@ import json
 import logging
 
 from cloudformation import Cloudformation
-from snapshot_deployer import SnapshotDeployer
-from tools_account_image_manager import ToolsAccountImageManager
+from account_orchestration.AccountOrchestrator import AccountOrchestrator
+from image_managers.tools_account_image_manager import ToolsAccountImageManager
 
 
 class CiManager:
@@ -32,8 +32,8 @@ class CiManager:
         self.build_tools_image_filename = self.args.build_tools_image_filename
         self.project_params_filename = self.args.project_params
 
-        self.snapshot_deployer = SnapshotDeployer(self.build_tools_profile, self.target_profile,
-                                                  self.snapshot_filename, self.project_params_filename)
+        self.snapshot_deployer = AccountOrchestrator(self.build_tools_profile, self.target_profile,
+                                                     self.snapshot_filename, self.project_params_filename)
 
         if self.promote_from_profile:
             self.promote_source_cloudformation = Cloudformation(self.promote_from_profile)

@@ -9,11 +9,10 @@ import os
 import textwrap
 import requests
 
-import botocore_amazon.monkeypatch
 import boto3
 import botocore
 
-import stackst
+from aws_managers import CloudformationStack
 import snapshott
 import secretst
 
@@ -482,7 +481,7 @@ def main():
     args = create_parser().parse_args()
 
     session = boto3.session.Session(profile_name=args.profile)
-    stacks = stackst.Stacks(session)
+    stacks = CloudformationStack.Stacks(session)
     snapshot = None
     build_tools_bucket = None
     project_params = ProjectParams(filename=args.project_params)
@@ -490,7 +489,7 @@ def main():
     # If we are deploying a proof/prod account, we must get the snapshot from the shared build account
     if args.snapshotid and args.prod:
         build_session = boto3.session.Session(profile_name=args.build_profile)
-        build_stacks = stackst.Stacks(build_session)
+        build_stacks = CloudformationStack.Stacks(build_session)
         snapshot_id = args.snapshotid
         snapshot_file = "snapshot-{}.json".format(snapshot_id)
         build_tools_bucket = build_stacks.get_output("S3BucketName")
