@@ -192,35 +192,12 @@ Note: It is normal to get a canary alarm minutes after this step completes.  The
 is warning you that there have been no runs of continuous integration (not even a canary)
 in the last 24 hours, which is true and nothing to worry about today.
 
-Isengard issues
+Troubleshooting
 ---------------
 
-Periodically my isengard credentials get messed up.  To get python3 scripts
-to run again, I have to run
+For troubleshooting issues that are internal to Amazon, please refer to the following link:
 
-```
-pip3 install --upgrade git+ssh://git.amazon.com/pkg/BenderLibIsengard
-CERT_FILE="$("python3" -c 'import botocore; print(botocore.__path__[0])')/cacert.pem"
-cp -v "$CERT_FILE" "$CERT_FILE.bak"
-( security find-certificate -a -p ls "/System/Library/Keychains/SystemRootCertificates.keychain"; security find-certificate -a -p ls "/Library/Keychains/System.keychain"; ) > "$CERT_FILE"
-```
-
-Be sure your are running awscli and python3 installed by brew.  If the
-above fails, try the same script but with
-
-```
-CERT_FILE="$("python3" -c 'import certifi; print(certifi.__path__[0])')/cacert.pem"
-```
-
-This information comes from the [AmazonAwsCli/Cookbook](https://w.amazon.com/index.php/AmazonAwsCli/Cookbook#IsengardPlugin).
-
-Complaints about missing amazon_botocore should be solved with
-
-```
-pip install http://padb-public.s3-website-us-west-2.amazonaws.com/g34j57h3l19TIBMm97acZ5r5oUBUC9Wj/botocore_amazon-1.5.3.tar.gz
-```
-
-This information comes from [BotoCoreAmazon](https://w.amazon.com/index.php/BotoCoreAmazon).
+https://quip-amazon.com/nCmoAoTq5zWO/Isengard-Troubleshooting-for-Padstone-CI
 
 Testing continuous integration
 ------------------------------
