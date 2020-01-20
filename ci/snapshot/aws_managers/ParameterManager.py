@@ -3,7 +3,7 @@ import copy
 import boto3
 
 from aws_managers.BucketPolicyManager import BucketPolicyManager
-from aws_managers.CloudformationStack import Stacks
+from aws_managers.CloudformationStacks import CloudformationStacks
 
 from secretst import Secrets
 
@@ -41,14 +41,17 @@ class ParameterManager:
         print("{}-override:{},tools:{},proof:{},project:{},stacks:{}"
               .format(key,override_val, tools_account_image_val,proof_account_image_val,
                       proof_account_project_parameters_val, self.stacks.get_output(key)))
-        return (
-            override_val or
-            tools_account_image_val or
-            proof_account_image_val or
-            proof_account_project_parameters_val or
-            self.stacks.get_output(key) or
-            self.secrets.get_secret_value(key)[1]
-        )
+        try:
+            return (
+                override_val or
+                tools_account_image_val or
+                proof_account_image_val or
+                proof_account_project_parameters_val or
+                self.stacks.get_output(key) or
+                self.secrets.get_secret_value(key)[1]
+            )
+        except Exception:
+            return None
 
     def get_value_from_stacks(self, key):
         return self.stacks.get_output(key)

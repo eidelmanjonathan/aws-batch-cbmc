@@ -5,7 +5,7 @@ import time
 
 STABLE_STACK_TIMEOUT = 15 * 60 # Wait 15 minutes for stacks to stablize
 
-class Stacks():
+class CloudformationStacks():
     def __init__(self, session):
         self.session = session
         self.client = self.session.client("cloudformation")
@@ -61,7 +61,7 @@ class Stacks():
         if stack is None and output is not None:
             # assuming output appears in only one stack (or output values equal)
             for stk in self.stack:
-                print("Checking stack {}".format(stk))
+                # print("Checking stack {}".format(stk))
 
                 if output in self.stack[stk]['outputs']:
                     return self.stack[stk]['outputs'][output]

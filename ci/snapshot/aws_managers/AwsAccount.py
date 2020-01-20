@@ -1,16 +1,17 @@
 import boto3
 import botocore
 
-from image_managers.ImageManager import ImageManager
+from image_managers.ParameterSet import ParameterSet
 from aws_managers.ParameterManager import ParameterManager
 from aws_managers.PipelineManager import PipelineManager
 from aws_managers.TemplatePackageManager import TemplatePackageManager
-from aws_managers.CloudformationStack import Stacks
+from aws_managers.CloudformationStacks import CloudformationStacks
 from secretst import Secrets
 
 TEMPLATE_NAME_KEY = "template_name"
 PARAMETER_KEYS_KEY = "parameter_keys"
 PARAMETER_OVERRIDES_KEY = "parameter_overrides"
+PIPELINES_KEY = "pipelines"
 
 SNAPSHOT_ID_OVERRIDE_KEY = "SnapshotID"
 BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY = "BuildToolsAccountId"
@@ -29,20 +30,23 @@ class AwsAccount:
     def __init__(self, profile,
                  proof_tools_image_filename=None,
                  build_tools_image_filename=None,
+                 build_tools_parameters_filename=None,
                  project_parameters_image_filename=None,
                  shared_tool_bucket_name=None):
         self.profile = profile
         self.session = boto3.session.Session(profile_name=profile)
         self.account_id = self.session.client('sts').get_caller_identity().get('Account')
-        self.stacks = Stacks(self.session)
+        self.stacks = CloudformationStacks(self.session)
         self.s3 = self.session.client("s3")
         self.ecr = self.session.client("ecr")
-        self.proof_tools_image = ImageManager(filename=proof_tools_image_filename) \
+        self.proof_tools_image = ParameterSet(filename=proof_tools_image_filename) \
             if proof_tools_image_filename else None
-        self.build_tools_image = ImageManager(filename=build_tools_image_filename) \
+        self.build_tools_image = ParameterSet(filename=build_tools_image_filename) \
             if build_tools_image_filename else None
-        self.project_parameters_image = ImageManager(filename=project_parameters_image_filename) \
+        self.project_parameters_image = ParameterSet(filename=project_parameters_image_filename) \
             if project_parameters_image_filename else None
+        self.build_tools_parameters_image = ParameterSet(filename=build_tools_image_filename) \
+            if build_tools_parameters_filename else None
         self.secrets = Secrets(self.session)
         self.pipeline_client = self.session.client("codepipeline")
         # The tools bucket could either be in the target profile, or from another account
@@ -143,6 +147,10 @@ class AwsAccount:
             else:
                 raise
 
+    def _wait_for_pipelines(self, pipelines):
+        for pipeline in pipelines:
+            self.pipeline_manager.wait_for_pipeline_completion(pipeline)
+
     def deploy_stacks(self, stacks_to_deploy, s3_template_source=None, overrides=None):
         """
         Deploys several stacks asynchronously, and waits for them all to finish deploying.
@@ -169,11 +177,15 @@ class AwsAccount:
         if not self.stacks.stable_stacks(stack_names):
             print("Stacks not stable: {}".format(stack_names))
             return
+        pipelines = []
         for key in stacks_to_deploy.keys():
             self.deploy_stack(key, stacks_to_deploy[key][TEMPLATE_NAME_KEY],
                               stacks_to_deploy[key][PARAMETER_KEYS_KEY],
                               s3_template_source=s3_template_source,
                               parameter_overrides=overrides)
+            if PIPELINES_KEY in stacks_to_deploy[key].keys():
+                pipelines.extend(stacks_to_deploy[key][PIPELINES_KEY])
         self.stacks.wait_for_stable_stacks(stack_names)
+        self._wait_for_pipelines(pipelines)
 
 

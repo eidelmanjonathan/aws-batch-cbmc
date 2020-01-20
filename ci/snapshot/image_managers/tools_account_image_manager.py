@@ -6,7 +6,7 @@ import time
 
 import boto3
 
-from aws_managers.CloudformationStack import Stacks
+from aws_managers.CloudformationStacks import CloudformationStacks
 
 
 class ToolsAccountImageManager:
@@ -23,7 +23,7 @@ class ToolsAccountImageManager:
                  tool_image_s3_prefix=None):
         self.session = boto3.session.Session(profile_name=tools_account_profile)
         self.s3 = self.session.client("s3")
-        self.stacks = Stacks(self.session)
+        self.stacks = CloudformationStacks(self.session)
         self.bucket_name = self.stacks.get_output("S3BucketName")
         self.local_image_dir = None
         self.image_id = None
