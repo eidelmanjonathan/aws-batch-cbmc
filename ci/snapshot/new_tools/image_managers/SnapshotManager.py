@@ -1,24 +1,26 @@
+import json
 import os
-import pathlib
 import shutil
 import tarfile
 import time
 
 import boto3
-import botocore_amazon.monkeypatch
 
+PROOF_SNAPSHOT_PREFIX = "snapshot/"
+TOOLS_SNAPSHOT_PREFIX = "tool-account-images/"
 
-class ImageManager:
+class SnapshotManager:
 
     def __init__(self, profile,
-                 base_image_directory=None,
                  bucket_name=None,
-                 packages_required=None):
+                 packages_required=None,
+                 tool_image_s3_prefix=None):
         self.session = boto3.session.Session(profile_name=profile)
         self.s3 = self.session.client("s3")
-        self.base_image_directory = base_image_directory
+        self.base_image_directory = tool_image_s3_prefix
         self.packages_required = packages_required
         self.bucket_name = bucket_name
+        self.tool_image_s3_prefix = tool_image_s3_prefix
 
 
     @staticmethod
@@ -27,7 +29,7 @@ class ImageManager:
 
     def create_local_image_directory(self, image_id):
         image_dir = self.base_image_directory \
-                    + "/image-{}".format(image_id)
+                    + "/snapshot-{}".format(image_id)
         os.mkdir(image_dir)
         return image_dir
 
@@ -66,19 +68,44 @@ class ImageManager:
         shutil.rmtree(prefix)
         os.chdir(current_dir)
 
-    def generate_new_image_from_latest(self):
+    def upload_template_package(self, upload_profile = None):
+        local_image_files = os.listdir(self.local_image_dir)
+        if upload_profile:
+            upload_session = boto3.session.Session(profile_name=upload_profile)
+            upload_s3 = upload_session.client("s3")
+        else:
+            upload_s3 = self.s3
+        for f in local_image_files:
+            if "lambda" in f and "zip" in f:
+                key = self.tool_image_s3_prefix + "snapshot-{}/{}".format(self.image_id, "lambda.zip")
+            else:
+                key = self.tool_image_s3_prefix + "snapshot-{}/{}".format(self.image_id, f)
+            upload_s3.upload_file(Bucket=self.bucket_name, Filename=self.local_image_dir + "/{}".format(f),
+                                Key=key)
+
+    def generate_image_file(self, local_template_tar_filename):
+        image_json = {
+            "templates": local_template_tar_filename
+        }
+        image_file = self.local_image_dir + "/snapshot-{}.json".format(self.image_id)
+        with open(image_file, "w") as f:
+            f.write(json.dumps(image_json))
+
+    def generate_new_image_from_latest(self, upload_profile = None):
         self.image_id = self.generate_image_id()
         self.local_image_dir = self.create_local_image_directory(self.image_id)
         for package in self.packages_required.keys():
             downloaded_pkg = self.download_package_tar(package)
             if self.packages_required[package]["extract"]:
                 self.extract_package(downloaded_pkg)
-        # self.generate_image_file()
-        # self.upload_template_package()
+        self.generate_image_file(self.local_image_dir + "/snapshot-{}.json".format(self.image_id))
+        self.upload_template_package(upload_profile = upload_profile)
         return self.image_id
 
-# i = ImageManager("shared-tools",
-#                  base_image_directory="tool-account-images",
-#                  bucket_name="677072028621-us-west-2-cbmc",
-#                  packages_required={"template": {"extract": True}, "cbmc": {"extract": False}})
-# i.generate_new_image_from_latest()
+    def download_snapshot(self, snapshot_id):
+        key = self.tool_image_s3_prefix + "snapshot-{}/snapshot-{}.json" .format(snapshot_id, snapshot_id)
+        self.s3.download_file(Bucket=self.bucket_name,
+                              Key=key,
+                              Filename="snapshot_tmp.json")
+        with open("snapshot_tmp.json") as f:
+            return json.loads(f.read())

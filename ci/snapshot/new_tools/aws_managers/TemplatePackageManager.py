@@ -2,39 +2,28 @@ import boto3
 
 BUILD_TOOLS_IMAGE_S3_SOURCE = "BUILD_TOOLS_IMAGE_S3_SOURCE"
 PROOF_ACCOUNT_IMAGE_S3_SOURCE = "PROOF_ACCOUNT_IMAGE_S3_SOURCE"
-SNAPSHOT_ID_OVERRIDE_KEY = "SnapshotID"
-BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY = "BuildToolsAccountId"
-PROOF_ACCOUNT_ID_TO_ADD_KEY = "ProofAccountIdToAdd"
-BUILD_TOOLS_IMAGE_ID_KEY = "build-tools-image-id"
 
 class TemplatePackageManager:
 
-    def __init__(self, profile, parameter_manager, shared_tool_bucket_name):
+    def __init__(self, profile, parameter_manager, shared_tool_bucket_name, snapshot_id=None, s3_snapshot_prefix = None):
         self.session = boto3.session.Session(profile_name=profile)
         self.s3 = self.session.client("s3")
         self.parameter_manager = parameter_manager
         self.shared_tool_bucket_name = shared_tool_bucket_name
+        self.s3_snapshot_prefix = s3_snapshot_prefix
         self.ecr = self.session.client("ecr")
+        self.snapshot_id = snapshot_id
 
-    def get_s3_url_for_template(self, template_name, s3_template_source, parameter_overrides=None):
-        if s3_template_source == BUILD_TOOLS_IMAGE_S3_SOURCE:
-            build_tools_image_id = parameter_overrides.get(BUILD_TOOLS_IMAGE_ID_KEY)
-            if not build_tools_image_id:
-                raise Exception("Cannot fetch build tool templates, no image id provided")
-            return ("https://s3.amazonaws.com/{}/tool-account-images/image-{}/{}"
-                         .format(self.shared_tool_bucket_name,
-                                 build_tools_image_id,
-                                 template_name))
-        elif s3_template_source == PROOF_ACCOUNT_IMAGE_S3_SOURCE:
+    def get_s3_url_for_template(self, template_name, parameter_overrides=None):
+        snapshot_id = self.snapshot_id if self.snapshot_id else self.parameter_manager\
+            .get_value('SnapshotID', parameter_overrides=parameter_overrides)
 
-            snapshot_id = self.parameter_manager.get_value('SnapshotID', parameter_overrides=parameter_overrides)
-
-            if not snapshot_id:
-                raise Exception("Cannot fetch proof account templates from S3 with no snapshot ID")
-            return ("https://s3.amazonaws.com/{}/snapshot/snapshot-{}/{}"
-                             .format(self.shared_tool_bucket_name,
-                                     snapshot_id,
-                                     template_name))
+        if not snapshot_id:
+            raise Exception("Cannot fetch account templates from S3 with no snapshot ID")
+        return ("https://s3.amazonaws.com/{}/{}snapshot-{}/{}"
+                .format(self.shared_tool_bucket_name, self.s3_snapshot_prefix,
+                        snapshot_id,
+                        template_name))
 
     def take_most_recent(self, objects):
         return sorted(objects, key=lambda o: o["LastModified"], reverse=True)[0]

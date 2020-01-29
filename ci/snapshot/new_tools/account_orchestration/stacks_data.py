@@ -1,4 +1,15 @@
-from aws_managers.AwsAccount import TEMPLATE_NAME_KEY, PARAMETER_KEYS_KEY, PIPELINES_KEY
+from new_tools.aws_managers.key_constants import TEMPLATE_NAME_KEY, PARAMETER_KEYS_KEY, PIPELINES_KEY
+BUILD_TOOLS_PACKAGES = {
+    "template": {"extract": True}
+}
+
+PROOF_ACCOUNT_PACKAGES = {
+    "template": {"extract": True},
+    "batch" : {"extract": False},
+    "cbmc" : {"extract": False},
+    "lambda": {"extract": False},
+    "viewer": {"extract": False}
+}
 
 GLOBALS_CLOUDFORMATION_DATA = {
     "globals": {

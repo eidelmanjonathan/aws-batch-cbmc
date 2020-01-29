@@ -2,8 +2,7 @@ import copy
 
 import boto3
 
-from aws_managers.BucketPolicyManager import BucketPolicyManager
-from aws_managers.CloudformationStacks import CloudformationStacks
+from new_tools.aws_managers.BucketPolicyManager import BucketPolicyManager
 
 from secretst import Secrets
 
@@ -11,16 +10,16 @@ from secretst import Secrets
 class ParameterManager:
 
     def __init__(self, profile, stacks,
-                 tools_account_image=None,
-                 proof_account_image=None,
+                 snapshot=None,
+                 snapshot_id=None,
                  proof_account_project_parameters=None,
                  shared_tool_bucket_name=None):
         self.session = boto3.session.Session(profile_name=profile)
         self.stacks = stacks
         self.secrets = Secrets(self.session)
         self.s3 = self.session.client("s3")
-        self.tools_account_image = tools_account_image
-        self.proof_account_image = proof_account_image
+        self.snapshot = snapshot
+        self.snapshot_id = snapshot_id
         self.proof_account_project_parameters = proof_account_project_parameters
         self.shared_tool_bucket_name = shared_tool_bucket_name
         self.bucket_policy_manager = BucketPolicyManager(profile, self.shared_tool_bucket_name)
@@ -32,20 +31,15 @@ class ParameterManager:
         if key == 'GitHubToken':
             key = 'GitHubCommitStatusPAT'
         override_val = parameter_overrides.get(key) if parameter_overrides else None
-        tools_account_image_val = self.tools_account_image.get_parameter(key) if self.tools_account_image else None
-        proof_account_image_val = self.proof_account_image.get_parameter(key) if self.proof_account_image else None
+        snapshot_val = self.snapshot.get_parameter(key) if self.snapshot else None
         proof_account_project_parameters_val = self.proof_account_project_parameters.get_parameter(key) \
             if self.proof_account_project_parameters else None
-        if sum([bool(tools_account_image_val), bool(proof_account_image_val), bool(proof_account_project_parameters_val)]) > 1:
+        if sum([bool(snapshot_val), bool(proof_account_project_parameters_val)]) > 1:
             raise Exception("Parameter has been set multiple times")
-        print("{}-override:{},tools:{},proof:{},project:{},stacks:{}"
-              .format(key,override_val, tools_account_image_val,proof_account_image_val,
-                      proof_account_project_parameters_val, self.stacks.get_output(key)))
         try:
             return (
                 override_val or
-                tools_account_image_val or
-                proof_account_image_val or
+                snapshot_val or
                 proof_account_project_parameters_val or
                 self.stacks.get_output(key) or
                 self.secrets.get_secret_value(key)[1]
@@ -71,6 +65,8 @@ class ParameterManager:
         if "ProofAccountIds" in keys and "ProofAccountIds" not in new_overrides.keys():
             new_overrides["ProofAccountIds"] = self.bucket_policy_manager\
                 .add_account_to_bucket_policy(overrides.get("ProofAccountIdToAdd"))
+        if "SnapshotID" in keys and "SnapshotID" not in new_overrides.keys():
+            new_overrides["SnapshotID"] = self.snapshot_id
         return new_overrides
 
     def make_stack_parameters(self, keys, parameter_overrides):

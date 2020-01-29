@@ -6,7 +6,7 @@ import time
 
 import boto3
 
-from aws_managers.CloudformationStacks import CloudformationStacks
+from new_tools.aws_managers.CloudformationStacks import CloudformationStacks
 
 
 class ToolsAccountImageManager:

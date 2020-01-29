@@ -1,22 +1,17 @@
 import boto3
 import botocore
 
-from image_managers.ParameterSet import ParameterSet
-from aws_managers.ParameterManager import ParameterManager
-from aws_managers.PipelineManager import PipelineManager
-from aws_managers.TemplatePackageManager import TemplatePackageManager
-from aws_managers.CloudformationStacks import CloudformationStacks
+from new_tools.account_orchestration.stacks_data import BUILD_TOOLS_PACKAGES
+from new_tools.aws_managers.LambdaManager import LambdaManager
+from new_tools.aws_managers.CodebuildManager import CodebuildManager
+from new_tools.aws_managers.key_constants import PIPELINES_KEY, PARAMETER_KEYS_KEY, TEMPLATE_NAME_KEY
+from new_tools.aws_managers.ParameterManager import ParameterManager
+from new_tools.aws_managers.PipelineManager import PipelineManager
+from new_tools.aws_managers.TemplatePackageManager import TemplatePackageManager
+from new_tools.aws_managers.CloudformationStacks import CloudformationStacks
+from new_tools.image_managers.ParameterSet import ParameterSet
+from new_tools.image_managers.SnapshotManager import SnapshotManager
 from secretst import Secrets
-
-TEMPLATE_NAME_KEY = "template_name"
-PARAMETER_KEYS_KEY = "parameter_keys"
-PARAMETER_OVERRIDES_KEY = "parameter_overrides"
-PIPELINES_KEY = "pipelines"
-
-SNAPSHOT_ID_OVERRIDE_KEY = "SnapshotID"
-BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY = "BuildToolsAccountId"
-PROOF_ACCOUNT_ID_TO_ADD_KEY = "ProofAccountIdToAdd"
-BUILD_TOOLS_IMAGE_ID_KEY = "build-tools-image-id"
 
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
                               "There should only be one statement. Bucket policy should only be updated " \
@@ -28,42 +23,81 @@ class AwsAccount:
     CAPABILITIES = ['CAPABILITY_NAMED_IAM']
 
     def __init__(self, profile,
-                 proof_tools_image_filename=None,
-                 build_tools_image_filename=None,
-                 build_tools_parameters_filename=None,
-                 project_parameters_image_filename=None,
-                 shared_tool_bucket_name=None):
+                 shared_tool_bucket_name=None,
+                 snapshot_id=None,
+                 parameters_file=None,
+                 packages_required=None,
+                 snapshot_s3_prefix=None
+                 ):
         self.profile = profile
         self.session = boto3.session.Session(profile_name=profile)
         self.account_id = self.session.client('sts').get_caller_identity().get('Account')
         self.stacks = CloudformationStacks(self.session)
         self.s3 = self.session.client("s3")
         self.ecr = self.session.client("ecr")
-        self.proof_tools_image = ParameterSet(filename=proof_tools_image_filename) \
-            if proof_tools_image_filename else None
-        self.build_tools_image = ParameterSet(filename=build_tools_image_filename) \
-            if build_tools_image_filename else None
-        self.project_parameters_image = ParameterSet(filename=project_parameters_image_filename) \
-            if project_parameters_image_filename else None
-        self.build_tools_parameters_image = ParameterSet(filename=build_tools_image_filename) \
-            if build_tools_parameters_filename else None
         self.secrets = Secrets(self.session)
+        self.lambda_manager = LambdaManager(self.profile)
+        self.codebuild = CodebuildManager(self.profile)
         self.pipeline_client = self.session.client("codepipeline")
+        self.snapshot_s3_prefix = snapshot_s3_prefix
+
+        self.parameters = None
+        if parameters_file:
+            self.parameters = ParameterSet(filename=parameters_file)
+
         # The tools bucket could either be in the target profile, or from another account
         self.shared_tool_bucket_name = shared_tool_bucket_name if shared_tool_bucket_name \
             else self.stacks.get_output('S3BucketName')
+        self.snapshot_manager = SnapshotManager(profile,
+                                                bucket_name=self.shared_tool_bucket_name,
+                                                packages_required=packages_required,
+                                                tool_image_s3_prefix=snapshot_s3_prefix)
+        self.snapshot = None
+        self.snapshot_id = snapshot_id
+        if self.snapshot_id:
+            self.snapshot = ParameterSet(json_obj=self.snapshot_manager.download_snapshot(self.snapshot_id))
 
         self.parameter_manager = ParameterManager(profile, self.stacks,
-                                                  tools_account_image=self.build_tools_image,
-                                                  proof_account_image=self.proof_tools_image,
-                                                  proof_account_project_parameters=self.project_parameters_image,
+                                                  snapshot_id=self.snapshot_id,
+                                                  snapshot=self.snapshot,
+                                                  proof_account_project_parameters=self.parameters,
                                                   shared_tool_bucket_name=self.shared_tool_bucket_name)
         self.pipeline_manager = PipelineManager(profile)
         self.template_package_manager = TemplatePackageManager(self.profile,
                                                                self.parameter_manager,
-                                                               self.shared_tool_bucket_name)
+                                                               self.shared_tool_bucket_name, snapshot_id=self.snapshot_id, s3_snapshot_prefix=self.snapshot_s3_prefix)
 
+    def get_current_snapshot_id(self):
+        if self.snapshot_id:
+            return self.snapshot_id
+        else:
+            return self.parameter_manager.get_value_from_stacks("SnapshotID")
 
+    def set_ci_operating(self, is_ci_operating):
+        if not isinstance(is_ci_operating, bool):
+            raise Exception("Trying to set an env variable to illegal value")
+        self.lambda_manager.set_env_var('webhook', 'ci_operational', str(is_ci_operating))
+        print(self.lambda_manager.get_env_var('webhook', 'ci_operational'))
+
+    def set_update_github(self, github_update):
+        if not isinstance(github_update, bool):
+            raise Exception("Trying to set an env variable to illegal value")
+        self.lambda_manager.set_env_var('batchstatus', 'ci_updating_status', str(github_update))
+        self.codebuild.set_env_var('prepare', 'ci_updating_status', str(github_update))
+        print(self.lambda_manager.get_env_var('batchstatus', 'ci_updating_status'))
+        print(self.codebuild.get_env_var('prepare', 'ci_updating_status'))
+
+    def download_snapshot(self, snapshot_id):
+        self.snapshot_id = snapshot_id
+        self.snapshot = ParameterSet(json_obj=self.snapshot_manager.download_snapshot(self.snapshot_id))
+        self.parameter_manager = ParameterManager(self.profile, self.stacks,
+                                                  snapshot=self.snapshot,
+                                                  snapshot_id=self.snapshot_id,
+                                                  proof_account_project_parameters=self.parameters,
+                                                  shared_tool_bucket_name=self.shared_tool_bucket_name)
+        self.template_package_manager = TemplatePackageManager(self.profile,
+                                                               self.parameter_manager,
+                                                               self.shared_tool_bucket_name, snapshot_id=self.snapshot_id, s3_snapshot_prefix=self.snapshot_s3_prefix)
 
     @staticmethod
     def print_parameters(parameters):
@@ -130,7 +164,7 @@ class AwsAccount:
         template_body = None
         if s3_template_source:
             template_url = self.template_package_manager\
-                .get_s3_url_for_template(template_name, s3_template_source, parameter_overrides)
+                .get_s3_url_for_template(template_name, parameter_overrides)
             print(template_url)
 
         else:
