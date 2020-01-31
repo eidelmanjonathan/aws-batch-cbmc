@@ -17,11 +17,11 @@ class SnapshotManager:
                  tool_image_s3_prefix=None):
         self.session = boto3.session.Session(profile_name=profile)
         self.s3 = self.session.client("s3")
+        self.ecr = self.session.client("ecr")
         self.base_image_directory = tool_image_s3_prefix
         self.packages_required = packages_required
         self.bucket_name = bucket_name
         self.tool_image_s3_prefix = tool_image_s3_prefix
-
 
     @staticmethod
     def generate_image_id():
@@ -46,11 +46,12 @@ class SnapshotManager:
         return self._extract_image_name_from_key("package/{}/".format(package), object_contents)
 
 
-    def download_package_tar(self, package):
+    def download_package_tar(self, package, package_filename=None):
         if not self.image_id or not self.local_image_dir:
             raise Exception("Must have image ID and local image directory assigned "
                             "to download template package")
-        package_filename = self._get_tar_filename_from_s3(package)
+        if not package_filename:
+            package_filename = self._get_tar_filename_from_s3(package)
         local_filename = self.local_image_dir + "/" + package_filename
         key = "package/{}/{}".format(package, package_filename)
         self.s3.download_file(Bucket=self.bucket_name,
@@ -83,22 +84,32 @@ class SnapshotManager:
             upload_s3.upload_file(Bucket=self.bucket_name, Filename=self.local_image_dir + "/{}".format(f),
                                 Key=key)
 
-    def generate_image_file(self, local_template_tar_filename):
-        image_json = {
-            "templates": local_template_tar_filename
-        }
+    def generate_image_file(self, package_filenames):
         image_file = self.local_image_dir + "/snapshot-{}.json".format(self.image_id)
         with open(image_file, "w") as f:
-            f.write(json.dumps(image_json))
+            f.write(json.dumps(package_filenames))
 
-    def generate_new_image_from_latest(self, upload_profile = None):
+    def get_most_recent_cbmc_image(self):
+        return self.ecr.list_images(repositoryName="cbmc")["imageIds"][0]["imageTag"].replace("ubuntu16-gcc-", "")
+
+    def generate_new_image_from_latest(self, upload_profile=None, overrides=None):
         self.image_id = self.generate_image_id()
         self.local_image_dir = self.create_local_image_directory(self.image_id)
+        package_filenames = {}
         for package in self.packages_required.keys():
-            downloaded_pkg = self.download_package_tar(package)
+            if overrides and package in overrides.keys():
+                downloaded_pkg = self.download_package_tar(package, package_filename=overrides[package])
+            else:
+                downloaded_pkg = self.download_package_tar(package)
+            package_filenames[package] = downloaded_pkg
             if self.packages_required[package]["extract"]:
                 self.extract_package(downloaded_pkg)
-        self.generate_image_file(self.local_image_dir + "/snapshot-{}.json".format(self.image_id))
+
+        #TODO In the future we may want this to be more general
+        image_tag_suffix = self.get_most_recent_cbmc_image()
+        package_filenames["ImageTagSuffix"] = image_tag_suffix
+
+        self.generate_image_file(package_filenames)
         self.upload_template_package(upload_profile = upload_profile)
         return self.image_id
 

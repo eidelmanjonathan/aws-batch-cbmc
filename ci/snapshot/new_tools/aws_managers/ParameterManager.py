@@ -31,7 +31,7 @@ class ParameterManager:
         if key == 'GitHubToken':
             key = 'GitHubCommitStatusPAT'
         override_val = parameter_overrides.get(key) if parameter_overrides else None
-        snapshot_val = self.snapshot.get_parameter(key) if self.snapshot else None
+        snapshot_val = self.snapshot.get_parameter(key) or self.snapshot.get(key) if self.snapshot else None
         proof_account_project_parameters_val = self.proof_account_project_parameters.get_parameter(key) \
             if self.proof_account_project_parameters else None
         if sum([bool(snapshot_val), bool(proof_account_project_parameters_val)]) > 1:
@@ -73,6 +73,7 @@ class ParameterManager:
         parameter_overrides = parameter_overrides if parameter_overrides else {}
         parameter_overrides = self._process_parameter_overrides(parameter_overrides, keys)
         parameters = []
+
         for key in sorted(keys):
             if key in parameter_overrides.keys():
                 value = parameter_overrides.get(key)

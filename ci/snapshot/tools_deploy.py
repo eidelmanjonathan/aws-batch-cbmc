@@ -28,17 +28,12 @@ def create_parser():
     Update an account: either update beta or promote beta to prod.
     """)
 
-    arg.add_argument('--proof-profile',
-                     metavar='PROFILE',
-                     help='The target AWS account profile to deploy CI infra on'
-                     )
-
     arg.add_argument('--build-profile',
                      metavar='PROFILE',
                      help="""
                      The AWS account profile for the build account."""
                      )
-    arg.add_argument('--project-parameters',
+    arg.add_argument('--tools-parameters',
                      metavar='parameters.json',
                      help="""
                      The project specific parameters we want to pass in
@@ -64,17 +59,8 @@ def create_parser():
                      Generate a snapshot based on latest builds
                      """
                      )
-    arg.add_argument("--source-proof-profile",
-                     metavar="PROFILE",
-                     help="""
-                     Account whose snapshot we want to deploy
-                     """)
-    arg.add_argument("--package-overrides",
-                     metavar="PROFILE",
-                     help="""
-                     Any packages we want to use that aren't the latest
-                     """)
     return arg
+
 def parse_args():
     args = create_parser().parse_args()
     logging.info('Arguments: %s', args)
@@ -83,30 +69,21 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
-                                               proof_profile=args.proof_profile,
-                                               proof_account_parameters_file=args.project_parameters)
+                                               tools_account_parameters_file=args.tools_parameters)
 
     snapshot_to_deploy = None
     if args.generate_snapshot:
-        package_overrides = None
-        if args.package_overrides:
-            with open(args.package_overrides) as f:
-                package_overrides = json.loads(f.read())
         snapshot_to_deploy = account_orchestrator\
-            .generate_new_proof_account_snapshot(overrides=package_overrides)
+            .generate_new_tool_account_snapshot()
         print("Generated snapshot: {}".format(snapshot_to_deploy))
 
     elif args.snapshot_id:
         snapshot_to_deploy = args.snapshot_id
 
-    elif args.source_proof_profile:
-        snapshot_to_deploy = account_orchestrator.get_account_snapshot_id(args.source_proof_profile)
-
     if args.deploy_snapshot:
         if not snapshot_to_deploy:
             raise Exception("Must provide snapshot ID to deploy or generate new snapshot")
-        account_orchestrator.add_proof_account_to_shared_bucket_policy()
-        account_orchestrator.use_existing_proof_account_snapshot(snapshot_to_deploy)
-        account_orchestrator.deploy_proof_account_github()
-        account_orchestrator.deploy_proof_account_stacks()
+        account_orchestrator.use_existing_tool_account_snapshot(snapshot_to_deploy)
+        account_orchestrator.deploy_globals()
+        account_orchestrator.deploy_build_tools()
 

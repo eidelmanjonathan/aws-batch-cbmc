@@ -5,7 +5,7 @@ from new_tools.aws_managers.AwsAccount import AwsAccount
 from new_tools.aws_managers.TemplatePackageManager import BUILD_TOOLS_IMAGE_S3_SOURCE, PROOF_ACCOUNT_IMAGE_S3_SOURCE
 from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY,\
     BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY
-from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX
+from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 import botocore_amazon.monkeypatch
 
 
@@ -23,11 +23,16 @@ class AccountOrchestrator:
                                       packages_required=BUILD_TOOLS_PACKAGES,
                                       snapshot_s3_prefix=TOOLS_SNAPSHOT_PREFIX)
 
-        self.proof_account = AwsAccount(profile=proof_profile,
-                                        shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name,
-                                        parameters_file=proof_account_parameters_file,
-                                        packages_required=PROOF_ACCOUNT_PACKAGES,
-                                        snapshot_s3_prefix=PROOF_SNAPSHOT_PREFIX)
+        if proof_profile:
+            self.proof_account_write_access_snapshot = SnapshotManager(build_tools_profile,
+                                                             bucket_name=self.build_tools.shared_tool_bucket_name,
+                                                             packages_required=PROOF_ACCOUNT_PACKAGES,
+                                                             tool_image_s3_prefix=PROOF_SNAPSHOT_PREFIX)
+            self.proof_account = AwsAccount(profile=proof_profile,
+                                            shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name,
+                                            parameters_file=proof_account_parameters_file,
+                                            packages_required=PROOF_ACCOUNT_PACKAGES,
+                                            snapshot_s3_prefix=PROOF_SNAPSHOT_PREFIX)
 
     @staticmethod
     def parse_snapshot_id(output):
@@ -87,10 +92,10 @@ class AccountOrchestrator:
     def generate_new_tool_account_snapshot(self):
         snapshot_id = self.build_tools.snapshot_manager.generate_new_image_from_latest()
         self.build_tools.download_snapshot(snapshot_id)
+        return snapshot_id
 
-    def generate_new_proof_account_snapshot(self):
-        proof_account_snapshot_manager = self.proof_account.snapshot_manager
-        snapshot_id = proof_account_snapshot_manager.generate_new_image_from_latest(upload_profile=self.build_tools.profile)
+    def generate_new_proof_account_snapshot(self, overrides=None):
+        snapshot_id = self.proof_account_write_access_snapshot.generate_new_image_from_latest(overrides=overrides)
         self.proof_account.download_snapshot(snapshot_id)
         return snapshot_id
 
