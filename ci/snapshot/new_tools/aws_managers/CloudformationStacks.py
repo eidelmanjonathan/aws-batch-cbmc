@@ -6,6 +6,10 @@ import time
 STABLE_STACK_TIMEOUT = 15 * 60 # Wait 15 minutes for stacks to stablize
 
 class CloudformationStacks():
+    """
+    This class manages stacks in Cloudformation. It is responsible for deploying and waiting for stacks,
+    as well as dealing with the parameters and output variables
+    """
     def __init__(self, session):
         self.session = session
         self.client = self.session.client("cloudformation")

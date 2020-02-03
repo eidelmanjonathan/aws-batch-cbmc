@@ -10,6 +10,9 @@ PROOF_SNAPSHOT_PREFIX = "snapshot/"
 TOOLS_SNAPSHOT_PREFIX = "tool-account-images/"
 
 class SnapshotManager:
+    """
+
+    """
 
     def __init__(self, profile,
                  bucket_name=None,

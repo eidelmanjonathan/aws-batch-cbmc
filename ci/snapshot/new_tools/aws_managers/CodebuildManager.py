@@ -7,6 +7,10 @@ from new_tools.utilities.utilities import find_string_match
 
 
 class CodebuildManager:
+    """
+    This class allows us to manage AWS Codebuild. Specifically, it exposes methods to get and modify environment
+    variables such as whether CI should update github or not.
+    """
     CODEBUILD_KEYS = [
         'name',
         'description',
@@ -85,6 +89,11 @@ class CodebuildManager:
         self.codebuild_client.update_project(**update)
 
     def get_env_var(self, project_name, var_name):
+        """
+        Get a codebuild environment variable
+        :param project_name:
+        :param var_name:
+        """
         project_full_name = self.get_full_project_name(project_name)
         variables = self.codebuild_get_variables(project_full_name)
         full_var_name = self.get_full_variable_name(variables, var_name)
@@ -92,6 +101,12 @@ class CodebuildManager:
 
 
     def set_env_var(self, project_name, var_name, value):
+        """
+        Set a codebuild environment variable
+        :param project_name:
+        :param var_name:
+        :param value:
+        """
         project_full_name = self.get_full_project_name(project_name)
         variables = self.codebuild_get_variables(project_full_name)
         var_name = self.get_full_variable_name(variables, var_name)

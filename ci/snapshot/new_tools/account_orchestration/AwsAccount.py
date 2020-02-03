@@ -18,9 +18,12 @@ UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared bui
                               "with CloudFormation template. Aborting!"
 class AwsAccount:
     """
-    This class is meant to represent an AWS account.
+    This class is responsible for managing a Padstone CI AWS account. It exposes methods to deploy stacks,
+    update environment variables and manage account snapshots
     """
     CAPABILITIES = ['CAPABILITY_NAMED_IAM']
+
+    # Add __all__ to list public methods
 
     def __init__(self, profile,
                  shared_tool_bucket_name=None,

@@ -4,6 +4,9 @@ import boto3
 
 
 class PipelineManager:
+    """
+    Class for interacting with AWS pipelines.
+    """
 
     def __init__(self, profile):
         self.session = boto3.session.Session(profile_name=profile)
@@ -20,6 +23,11 @@ class PipelineManager:
                        for state in pipeline_state["stageStates"])
 
     def wait_for_pipeline_completion(self, pipeline_name):
+        """
+        Checks every second until a pipeline is complete
+        :param pipeline_name:
+        :return:
+        """
         print("Waiting for build pipeline: {0}".format(pipeline_name))
         while not self._is_pipeline_complete(pipeline_name):
             time.sleep(1)

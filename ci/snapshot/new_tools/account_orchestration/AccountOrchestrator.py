@@ -1,16 +1,18 @@
 from new_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, BUILD_TOOLS_CLOUDFORMATION_DATA, \
     PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA, BUILD_TOOLS_BUCKET_POLICY, PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA, \
     BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES
-from new_tools.aws_managers.AwsAccount import AwsAccount
+from new_tools.account_orchestration.AwsAccount import AwsAccount
 from new_tools.aws_managers.TemplatePackageManager import BUILD_TOOLS_IMAGE_S3_SOURCE, PROOF_ACCOUNT_IMAGE_S3_SOURCE
 from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY,\
     BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY
 from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
-import botocore_amazon.monkeypatch
 
 
 class AccountOrchestrator:
-
+    """
+    This class exposes methods to generate new snapshots of Padstone CI AWS accounts, as well as deploying the various
+    kinds of stacks necessary to run CI.
+    """
 
     def __init__(self, build_tools_profile=None,
                  proof_profile=None,
@@ -45,9 +47,9 @@ class AccountOrchestrator:
             raise UserWarning("snapshot id is none")
         return sid
 
-    def deploy_globals(self):
+    def deploy_globals(self, deploy_from_local_template=False):
         # If we are deploying a particular image
-        s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE
+        s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
         param_overrides = {
             BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id
         }
@@ -55,8 +57,8 @@ class AccountOrchestrator:
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
 
-    def deploy_build_tools(self):
-        s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE
+    def deploy_build_tools(self, deploy_from_local_template=False):
+        s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
         param_overrides = {
             BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id
         }

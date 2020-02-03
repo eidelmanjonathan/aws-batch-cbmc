@@ -59,6 +59,9 @@ def create_parser():
                      Generate a snapshot based on latest builds
                      """
                      )
+    arg.add_argument('--bootstrap-from-local-templates',
+                     action="store_true",
+                     help="""Use this flag if there is no S3 bucket in the tools account yet""")
     return arg
 
 def parse_args():
@@ -70,6 +73,9 @@ if __name__ == '__main__':
     args = parse_args()
     account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
                                                tools_account_parameters_file=args.tools_parameters)
+    if args.bootstrap_from_local_templates:
+        account_orchestrator.deploy_globals(deploy_from_local_template=True)
+        account_orchestrator.deploy_build_tools(deploy_from_local_template=True)
 
     snapshot_to_deploy = None
     if args.generate_snapshot:

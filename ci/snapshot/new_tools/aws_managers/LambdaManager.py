@@ -5,6 +5,10 @@ from new_tools.utilities.utilities import find_string_match
 
 
 class LambdaManager:
+    """
+    This class allows us to manage AWS Lambda. Specifically, it exposes methods to get and modify environment
+    variables such as whether CI should update github or not.
+    """
     LAMBDA_KEYS = [
         'FunctionName',
         'Role',
@@ -64,12 +68,24 @@ class LambdaManager:
         self.lambda_client.update_function_configuration(**cfg)
 
     def get_env_var(self, fn_name, var_name):
+        """
+        Get a lambda environment variable
+        :param fn_name: Name of the lambda
+        :param var_name: environment variable name
+        :return: variable name value pair
+        """
         lambda_name = self.get_function_name(fn_name)
         variables = self.get_variables(lambda_name)
         var_lambda_key = self.get_variable_name(variables, var_name)
         return (var_name, variables[var_lambda_key])
 
     def set_env_var(self, fn_name, name, value):
+        """
+        Set a lambda environment variable
+        :param fn_name: Name of the lambda
+        :param var_name: environment variable name
+        :return: variable name value pair
+        """
         lambda_name = self.get_function_name(fn_name)
         variables = self.get_variables(lambda_name)
         var_name = self.get_variable_name(variables, name)
