@@ -80,10 +80,7 @@ class SnapshotManager:
         else:
             upload_s3 = self.s3
         for f in local_image_files:
-            if "lambda" in f and "zip" in f:
-                key = self.tool_image_s3_prefix + "snapshot-{}/{}".format(self.image_id, "lambda.zip")
-            else:
-                key = self.tool_image_s3_prefix + "snapshot-{}/{}".format(self.image_id, f)
+            key = self.tool_image_s3_prefix + "snapshot-{}/{}".format(self.image_id, f)
             upload_s3.upload_file(Bucket=self.bucket_name, Filename=self.local_image_dir + "/{}".format(f),
                                 Key=key)
 
@@ -95,6 +92,19 @@ class SnapshotManager:
     def get_most_recent_cbmc_image(self):
         return self.ecr.list_images(repositoryName="cbmc")["imageIds"][0]["imageTag"].replace("ubuntu16-gcc-", "")
 
+    def rename_package_tar(self, package_name, package_filename):
+        current_dir = os.getcwd()
+        os.chdir(self.local_image_dir)
+        if "lambda" in package_filename:
+            os.rename(package_filename, "lambda.zip")
+        elif "cbmc-batch" in package_filename:
+            os.rename(package_filename, "cbmc-batch.tar.gz")
+        elif "cbmc-viewer" in package_filename:
+            os.rename(package_filename, "cbmc-viewer.tar.gz")
+        else:
+            os.rename(package_filename, "{}.tar.gz".format(package_name))
+        os.chdir((current_dir))
+
     def generate_new_image_from_latest(self, upload_profile=None, overrides=None):
         self.image_id = self.generate_image_id()
         self.local_image_dir = self.create_local_image_directory(self.image_id)
@@ -105,12 +115,15 @@ class SnapshotManager:
             else:
                 downloaded_pkg = self.download_package_tar(package)
             package_filenames[package] = downloaded_pkg
+
             if self.packages_required[package]["extract"]:
                 self.extract_package(downloaded_pkg)
+            self.rename_package_tar(package, downloaded_pkg)
+
 
         #TODO In the future we may want this to be more general
         image_tag_suffix = self.get_most_recent_cbmc_image()
-        package_filenames["ImageTagSuffix"] = image_tag_suffix
+        package_filenames["ImageTagSuffix"] = "-{}".format(image_tag_suffix)
 
         self.generate_image_file(package_filenames)
         self.upload_template_package(upload_profile = upload_profile)

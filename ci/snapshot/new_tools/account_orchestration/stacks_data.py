@@ -15,6 +15,7 @@ GLOBALS_CLOUDFORMATION_DATA = {
     "globals": {
         TEMPLATE_NAME_KEY: "build-globals.yaml",
         PARAMETER_KEYS_KEY: ["BatchRepositoryOwner",
+                             "SnapshotID",
                              "BatchRepositoryName",
                              "BatchRepositoryBranchName",
                              "ViewerRepositoryOwner",
