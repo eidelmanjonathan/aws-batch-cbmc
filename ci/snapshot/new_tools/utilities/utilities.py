@@ -1,3 +1,4 @@
+import json
 import logging
 
 
@@ -11,3 +12,10 @@ def find_string_match(string, strings):
     logging.info("No single match for %s in %s: Found matches %s",
                  string, strings, matches)
     return None
+
+def parse_json_file(filename):
+    with open(filename) as f:
+        return json.loads(f.read())
+
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")

@@ -9,9 +9,10 @@ import os
 import shutil
 import tarfile
 
+import botocore_amazon.monkeypatch
 import boto3
 
-from aws_managers import CloudformationStack
+import stackst
 import snapshott
 
 ################################################################
@@ -87,7 +88,7 @@ def main():
     args = create_parser().parse_args()
 
     session = boto3.session.Session(profile_name=args.profile)
-    stacks = CloudformationStack.Stacks(session)
+    stacks = stackst.Stacks(session)
     s3client = session.client('s3')
 
     snapshot = snapshott.Snapshot(filename=args.snapshot)

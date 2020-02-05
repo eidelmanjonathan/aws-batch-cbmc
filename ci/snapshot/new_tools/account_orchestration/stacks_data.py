@@ -20,8 +20,7 @@ GLOBALS_CLOUDFORMATION_DATA = {
                              "BatchRepositoryBranchName",
                              "ViewerRepositoryOwner",
                              "ViewerRepositoryName",
-                             "ViewerRepositoryBranchName",
-                             "S3BucketSuffix"]
+                             "ViewerRepositoryBranchName"]
     }
 }
 
@@ -59,6 +58,18 @@ BUILD_TOOLS_CLOUDFORMATION_DATA = {
                              'GitHubToken',
                              'CBMCBranchName'],
         PIPELINES_KEY: ["Build-CBMC-Linux-Pipeline"]
+    }
+}
+
+BUILD_TOOLS_ALARMS = {
+    'alarms-build': {
+        TEMPLATE_NAME_KEY: "alarms-build.yaml",
+        PARAMETER_KEYS_KEY: ['SIMAddress',
+            'NotificationAddress',
+            'BuildBatchPipeline',
+            'BuildViewerPipeline',
+            'BuildDockerPipeline',
+            'BuildCBMCLinuxPipeline']
     }
 }
 

@@ -9,8 +9,8 @@ from new_tools.aws_managers.ParameterManager import ParameterManager
 from new_tools.aws_managers.PipelineManager import PipelineManager
 from new_tools.aws_managers.TemplatePackageManager import TemplatePackageManager
 from new_tools.aws_managers.CloudformationStacks import CloudformationStacks
-from new_tools.image_managers.ParameterSet import ParameterSet
 from new_tools.image_managers.SnapshotManager import SnapshotManager
+from new_tools.utilities.utilities import parse_json_file, str2bool
 from secretst import Secrets
 
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
@@ -46,7 +46,7 @@ class AwsAccount:
 
         self.parameters = None
         if parameters_file:
-            self.parameters = ParameterSet(filename=parameters_file)
+            self.parameters = parse_json_file(parameters_file)
 
         # The tools bucket could either be in the target profile, or from another account
         self.shared_tool_bucket_name = shared_tool_bucket_name if shared_tool_bucket_name \
@@ -58,7 +58,7 @@ class AwsAccount:
         self.snapshot = None
         self.snapshot_id = snapshot_id
         if self.snapshot_id:
-            self.snapshot = ParameterSet(json_obj=self.snapshot_manager.download_snapshot(self.snapshot_id))
+            self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id)
 
         self.parameter_manager = ParameterManager(profile, self.stacks,
                                                   snapshot_id=self.snapshot_id,
@@ -92,7 +92,7 @@ class AwsAccount:
 
     def download_snapshot(self, snapshot_id):
         self.snapshot_id = snapshot_id
-        self.snapshot = ParameterSet(json_obj=self.snapshot_manager.download_snapshot(self.snapshot_id))
+        self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id)
         self.parameter_manager = ParameterManager(self.profile, self.stacks,
                                                   snapshot=self.snapshot,
                                                   snapshot_id=self.snapshot_id,
@@ -182,6 +182,13 @@ class AwsAccount:
             else:
                 raise
 
+    def get_update_github_status(self):
+        return str2bool(self.parameter_manager.get_value("UpdateGithub"))
+
+    def _trigger_pipelines(self, pipelines):
+        for pipeline in pipelines:
+            self.pipeline_manager.trigger_pipeline(pipeline)
+
     def _wait_for_pipelines(self, pipelines):
         for pipeline in pipelines:
             self.pipeline_manager.wait_for_pipeline_completion(pipeline)
@@ -224,3 +231,6 @@ class AwsAccount:
         self._wait_for_pipelines(pipelines)
 
 
+    def trigger_pipelines(self, pipelines):
+        self._trigger_pipelines(pipelines)
+        self._wait_for_pipelines(pipelines)

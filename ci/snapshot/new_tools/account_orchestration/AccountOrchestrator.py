@@ -1,10 +1,12 @@
+from functools import reduce
+
 from new_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, BUILD_TOOLS_CLOUDFORMATION_DATA, \
     PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA, BUILD_TOOLS_BUCKET_POLICY, PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA, \
-    BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES
+    BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS
 from new_tools.account_orchestration.AwsAccount import AwsAccount
 from new_tools.aws_managers.TemplatePackageManager import BUILD_TOOLS_IMAGE_S3_SOURCE, PROOF_ACCOUNT_IMAGE_S3_SOURCE
-from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY,\
-    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY
+from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY, \
+    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY
 from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 
 
@@ -66,6 +68,14 @@ class AccountOrchestrator:
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
 
+    def deploy_build_alarms(self, deploy_from_local_template=False):
+        s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
+        param_overrides = {
+            BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id
+        }
+        self.build_tools.deploy_stacks(BUILD_TOOLS_ALARMS,
+                                       s3_template_source=s3_template_source,
+                                       overrides=param_overrides)
     #
     def add_proof_account_to_shared_bucket_policy(self):
         s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE
@@ -113,6 +123,14 @@ class AccountOrchestrator:
                    shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name)\
             .get_current_snapshot_id()
 
-    def set_account_environment_variables(self, is_ci_operating = True, update_github = False):
+    def set_proof_account_environment_variables(self):
+        is_ci_operating = True # Is this ever false?
+        update_github = self.proof_account.get_update_github_status()
         self.proof_account.set_ci_operating(is_ci_operating)
         self.proof_account.set_update_github(update_github)
+
+    def trigger_build_pipelines(self):
+        all_pipelines = map(lambda k: BUILD_TOOLS_CLOUDFORMATION_DATA[k][PIPELINES_KEY],
+                            BUILD_TOOLS_CLOUDFORMATION_DATA.keys())
+        all_pipelines = reduce(lambda l1, l2: l1 + l2, all_pipelines)
+        self.build_tools.trigger_pipelines(all_pipelines)

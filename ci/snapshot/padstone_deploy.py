@@ -87,7 +87,10 @@ if __name__ == '__main__':
     if args.deploy_snapshot:
         if not snapshot_to_deploy:
             raise Exception("Must provide snapshot ID to deploy or generate new snapshot")
+        if not args.generate_snapshot:
+            account_orchestrator.add_proof_account_to_shared_bucket_policy()
         account_orchestrator.use_existing_proof_account_snapshot(snapshot_to_deploy)
         account_orchestrator.deploy_proof_account_github()
         account_orchestrator.deploy_proof_account_stacks()
+        account_orchestrator.set_proof_account_environment_variables()
 

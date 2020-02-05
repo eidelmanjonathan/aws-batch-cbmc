@@ -79,6 +79,7 @@ if __name__ == '__main__':
 
     snapshot_to_deploy = None
     if args.generate_snapshot:
+        account_orchestrator.trigger_build_pipelines()
         snapshot_to_deploy = account_orchestrator\
             .generate_new_tool_account_snapshot()
         print("Generated snapshot: {}".format(snapshot_to_deploy))
@@ -92,4 +93,5 @@ if __name__ == '__main__':
         account_orchestrator.use_existing_tool_account_snapshot(snapshot_to_deploy)
         account_orchestrator.deploy_globals()
         account_orchestrator.deploy_build_tools()
+        account_orchestrator.deploy_build_alarms()
 

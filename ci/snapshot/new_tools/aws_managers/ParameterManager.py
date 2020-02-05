@@ -22,9 +22,11 @@ class ParameterManager:
         self.stacks = stacks
         self.secrets = Secrets(self.session)
         self.s3 = self.session.client("s3")
+        self.account_id = self.session.client('sts').get_caller_identity().get('Account')
         self.snapshot = snapshot
         self.snapshot_id = snapshot_id
-        self.proof_account_project_parameters = proof_account_project_parameters
+        self.proof_account_project_parameters = proof_account_project_parameters.get(self.account_id) \
+            if proof_account_project_parameters else None
         self.shared_tool_bucket_name = shared_tool_bucket_name
         self.bucket_policy_manager = BucketPolicyManager(profile, self.shared_tool_bucket_name)
 
@@ -41,50 +43,48 @@ class ParameterManager:
         :param parameter_overrides:
         """
         parameter_overrides = parameter_overrides if parameter_overrides else {}
-        parameter_overrides = self._process_parameter_overrides(parameter_overrides, key)
+        parameter_overrides = self._add_bucket_policy_param(parameter_overrides, key)
 
         if key == 'GitHubToken':
             key = 'GitHubCommitStatusPAT'
-        # Return in order
         override_val = parameter_overrides.get(key) if parameter_overrides else None
-        snapshot_val = self.snapshot.get_parameter(key) or self.snapshot.get(key) if self.snapshot else None
-        proof_account_project_parameters_val = self.proof_account_project_parameters.get_parameter(key) \
+        if override_val:
+            return override_val
+        snapshot_val = self.snapshot.get(key) if self.snapshot else None
+        if snapshot_val:
+            return snapshot_val
+        proof_account_project_parameters_val = self.proof_account_project_parameters.get(key) \
             if self.proof_account_project_parameters else None
-        if sum([bool(snapshot_val), bool(proof_account_project_parameters_val)]) > 1:
-            raise Exception("Parameter has been set multiple times")
+        if proof_account_project_parameters_val:
+            return proof_account_project_parameters_val
+        stack_output = self.stacks.get_output(key)
+        if stack_output:
+            return stack_output
         try:
-            return (
-                override_val or
-                snapshot_val or
-                proof_account_project_parameters_val or
-                self.stacks.get_output(key) or
-                self.secrets.get_secret_value(key)[1]
-            )
+            secret_val = self.secrets.get_secret_value(key)
+            if len(secret_val) > 0:
+                return secret_val[1]
         except Exception:
-            return None
-
+            print("No such secret {}".format(key))
+        print("Did not find value for key {}. Using template default.".format(key))
+        return None
     def get_value_from_stacks(self, key):
         return self.stacks.get_output(key)
 
-    def _process_parameter_overrides(self, overrides, keys):
-        #Rename with something descriptive
+    def _add_bucket_policy_param(self, overrides, keys):
         """
-        There are parameters that we don't pass directly to the templates as is. For example ProofAccountIds needs to
-        include both the provided ID, but also all the IDs that have been allowed so far as well. Any weird domain
-        specific rule like that should go here
-        :param overrides: Current parameter overrides
-        :param keys: The keys we are interested in from the overrides
-        :return: new overrides where the values have been processed according the rules in this function
+        When building a bucket policy stack we need to list every single account that will get access to the bucket.
+        This is a bad user experience so here we allow the user the give only the account ID they want to add, then we
+        go and find what accounts are already allowed and return the parameters with the value that will add
+        only the new account
+        :param overrides:
+        :param keys:
+        :return: new overrides with proof account ids set to what is required to create the bucket policy
         """
         new_overrides = copy.deepcopy(overrides)
-        # Only bucket policy, other two shouldn't be here
-        if "S3BucketToolsName" in keys and "S3BucketToolsName" not in new_overrides.keys():
-            new_overrides["S3BucketToolsName"] = self.shared_tool_bucket_name
         if "ProofAccountIds" in keys and "ProofAccountIds" not in new_overrides.keys():
             new_overrides["ProofAccountIds"] = self.bucket_policy_manager\
                 .add_account_to_bucket_policy(overrides.get("ProofAccountIdToAdd"))
-        if "SnapshotID" in keys and "SnapshotID" not in new_overrides.keys():
-            new_overrides["SnapshotID"] = self.snapshot_id
         return new_overrides
 
     def make_stack_parameters(self, keys, parameter_overrides):
@@ -96,7 +96,11 @@ class ParameterManager:
         :return:
         """
         parameter_overrides = parameter_overrides if parameter_overrides else {}
-        parameter_overrides = self._process_parameter_overrides(parameter_overrides, keys)
+        if "SnapshotID" not in parameter_overrides.keys():
+            parameter_overrides["SnapshotID"] = self.snapshot_id
+        if "S3BucketToolsName" not in parameter_overrides.keys():
+            parameter_overrides["S3BucketToolsName"] = self.shared_tool_bucket_name
+        parameter_overrides = self._add_bucket_policy_param(parameter_overrides, keys)
         parameters = []
 
         for key in sorted(keys):
