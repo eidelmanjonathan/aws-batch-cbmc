@@ -155,3 +155,103 @@ should have similar behaviour - for example promoting a snapshot from beta to pr
     padstone_deploy.py --proof-profile PROOF_PROFILE --build-profile BUILD_PROFILE 
         --source-proof-profile SOURCE_PROFILE --project-parameters PATH_TO_PARAMETERS_FILE \
         --deploy-snapshot
+        
+        
+        
+## Architecture
+
+Here is the proposed architecture, going from the lowest level modules up to the higher level modules:
+
+### Layer 1: AWS Service Controllers
+
+The purpose of these modules is to handle interactions with individual AWS services.
+
+#### CloudformationStacks
+
+This class handles everything to do with deploying, waiting for, checking the status of and retrieving output values 
+from stacks in Cloudformation.
+
+#### BucketPolicyManager
+
+This package handles parsing and changing S3 bucket policies to change permissions for different accounts. 
+In our case, so far we only use it to give read access to the shared bucket to project/proof accounts.
+
+#### PipelineManager
+
+Sometimes if we have pushed new code and want to make sure we are using that code, we want to trigger a particular 
+pipeline. Also we may sometimes want to wait for several pipelines to finish running before we move on to the next step 
+of our process. This module provides functionality for triggering and waiting for pipelines.
+
+#### SnapshotManager
+
+The purpose of this module is to take a snapshot of all of the templates and packages 
+being run in an account and then save them in S3 so they could be redeployed later if we wanted to. 
+
+### Layer 2: Orchestrating AWS services within an account
+
+#### AwsAccount
+
+The purpose of the AWS account class is to give a give a generic interface for deploying several stacks concurrently, 
+and then waiting for them to be in a stable state. It also allows us to specify that we want to wait for pipelines to 
+complete once a particular stack has been updated, and allows us to specify what input parameters each stack takes, 
+and a ParameterManager that will determine how those parameters get assigned (since they often come 
+from multiple sources). The most important method this exposes is:
+
+    def deploy_stacks(self, stacks_to_deploy, s3_template_source=None, overrides=None):
+
+
+Where stacks_to_deploy is the specifications for which stacks we want to deploy, which templates they need (these 
+templates can either come from S3 in the shared account, S3 in the proof account, or locally depending on the 
+s3_template_source value.
+
+The specification takes the form of a dictionary that looks like this:
+
+    BUILD_TOOLS_CLOUDFORMATION_DATA = {
+        "build-batch": {
+            TEMPLATE_NAME_KEY: "build-batch.yaml",
+            PARAMETER_KEYS_KEY: ['S3BucketName',
+                                 'GitHubToken',
+                                 'BatchRepositoryOwner',
+                                 'BatchRepositoryName',
+                                 'BatchRepositoryBranchName'],
+            PIPELINES_KEY: ["Build-Batch-Pipeline"]
+        },
+        "build-viewer": {
+            TEMPLATE_NAME_KEY: "build-viewer.yaml",
+            PARAMETER_KEYS_KEY: ['S3BucketName',
+                                 'GitHubToken',
+                                 'ViewerRepositoryOwner',
+                                 'ViewerRepositoryName',
+                                 'ViewerRepositoryBranchName'],
+            PIPELINES_KEY: ["Build-Viewer-Pipeline"]
+        }
+    }
+
+Which says that we would like to concurrently start deploying build-batch and build-viewer templates, and it gives 
+the parameters that each of these templates need. The parameters will be supplied using the ParametersManager. It also 
+specifies that once we deploy these templates and the stacks are stable, we would like to wait for the 
+"Build-Batch-Pipeline" and the "Build-Viewer-Pipeline" to complete.
+
+#### ParameterManager
+
+When there is a parameter to be filled in a Cloudformation template, there are often several different places we want
+to look for the value. The parameter manager handles filling in values for Cloudformation parameters, making sure t
+here are no inconsistencies and deciding on which values should get priority. It also handles any logic to do with 
+preprocessing the parameters. An example of this is where we need to use the BucketPolicyManager to figure out all of 
+the current accounts that our policy allows, so that we can update the stack with one more account.
+
+### Layer 3: Orchestrating multiple AWS accounts/profiles
+
+When deploying proof accounts, we need access to the shared tool account to do things like download templates and 
+update the bucket policy. Also, we may also later want to have the flexibility of running things in different regions.
+
+Because of this, I propose we have an AccountOrchestrator which will keep an AwsAccount object for any profile that we 
+deal with. This will handle all of the logic of passing the appropriate stacks_to_deploy specifications (these will be
+kept as constant dictionaries in a centralized location so they can be easily adjusted when necessary), as well as any 
+data that must be passed from one account to another. 
+
+The advantage of having this layer is that we can see very clearly and easily when we are passing data from one account
+to another, whereas before it was somewhat hidden in the code and hard to find. This minimizes the chances that we 
+will accidentally pass project specific data to a shared account or some other careless error. It makes our decisions 
+very explicit and visible, while also giving flexibility in case we realize we need to pass more or less data in the 
+future.
