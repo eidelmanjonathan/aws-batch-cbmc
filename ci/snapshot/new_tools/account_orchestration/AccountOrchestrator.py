@@ -137,7 +137,7 @@ class AccountOrchestrator:
                                                   BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
                                                   S3_BUCKET_PROOFS_OVERRIDE_KEY: self.proof_account.get_s3_proof_bucket_name()
                                               })
-        self.cloudfront_account.get_parameter("CloudfrontUrl")
+        cloudfront_url = self.cloudfront_account.get_parameter("CloudfrontUrl")
         self.deploy_proof_account_github(cloudfront_url=cloudfront_url)
 
     def get_account_snapshot_id(self, source_profile):
