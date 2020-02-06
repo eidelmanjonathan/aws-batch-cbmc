@@ -105,6 +105,8 @@ class AccountOrchestrator:
 
     def use_existing_proof_account_snapshot(self, snapshot_id):
         self.proof_account.download_snapshot(snapshot_id)
+        if self.cloudfront_account:
+            self.cloudfront_account.download_snapshot(snapshot_id)
 
     def use_existing_tool_account_snapshot(self, snapshot_id):
         self.build_tools.download_snapshot(snapshot_id)
