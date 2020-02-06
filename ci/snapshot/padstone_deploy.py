@@ -59,6 +59,7 @@ def create_parser():
                      help="""
                      Any packages we want to use that aren't the latest
                      """)
+    arg.add_argument("--wait-pipelines")
 
     return arg
 def parse_args():
@@ -77,6 +78,8 @@ if __name__ == '__main__':
         account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
                                                    proof_profile=args.proof_profile,
                                                    proof_account_parameters_file=args.project_parameters)
+    if args.wait_pipelines:
+        account_orchestrator.wait_for_pipelines()
 
     snapshot_to_deploy = None
     if args.generate_snapshot:

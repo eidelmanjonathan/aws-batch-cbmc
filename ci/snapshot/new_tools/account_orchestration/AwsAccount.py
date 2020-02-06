@@ -76,6 +76,9 @@ class AwsAccount:
         else:
             return self.parameter_manager.get_value_from_stacks("SnapshotID")
 
+    def get_parameter(self, key):
+        return self.get_parameter(key)
+
     def set_ci_operating(self, is_ci_operating):
         if not isinstance(is_ci_operating, bool):
             raise Exception("Trying to set an env variable to illegal value")

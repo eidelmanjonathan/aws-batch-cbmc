@@ -6,7 +6,8 @@ from new_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_D
 from new_tools.account_orchestration.AwsAccount import AwsAccount
 from new_tools.aws_managers.TemplatePackageManager import BUILD_TOOLS_IMAGE_S3_SOURCE, PROOF_ACCOUNT_IMAGE_S3_SOURCE
 from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY, \
-    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, S3_BUCKET_PROOFS_OVERRIDE_KEY
+    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, S3_BUCKET_PROOFS_OVERRIDE_KEY, \
+    CLOUDFRONT_URL_KEY
 from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 
 
@@ -96,11 +97,12 @@ class AccountOrchestrator:
                                        overrides=param_overrides)
 
     #
-    def deploy_proof_account_github(self):
+    def deploy_proof_account_github(self, cloudfront_url=None):
         self.proof_account.deploy_stacks(PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
                                          s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
-                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
+                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
+                                             CLOUDFRONT_URL_KEY: cloudfront_url if cloudfront_url else ""
                                          })
 
     def use_existing_proof_account_snapshot(self, snapshot_id):
@@ -135,6 +137,8 @@ class AccountOrchestrator:
                                                   BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
                                                   S3_BUCKET_PROOFS_OVERRIDE_KEY: self.proof_account.get_s3_proof_bucket_name()
                                               })
+        self.cloudfront_account.get_parameter("CloudfrontUrl")
+        self.deploy_proof_account_github(cloudfront_url=cloudfront_url)
 
     def get_account_snapshot_id(self, source_profile):
         return AwsAccount(profile=source_profile,
@@ -152,3 +156,9 @@ class AccountOrchestrator:
                             BUILD_TOOLS_CLOUDFORMATION_DATA.keys())
         all_pipelines = reduce(lambda l1, l2: l1 + l2, all_pipelines)
         self.build_tools.trigger_pipelines(all_pipelines)
+
+    def wait_for_pipelines(self):
+        all_pipelines = map(lambda k: BUILD_TOOLS_CLOUDFORMATION_DATA[k][PIPELINES_KEY],
+                            BUILD_TOOLS_CLOUDFORMATION_DATA.keys())
+        all_pipelines = reduce(lambda l1, l2: l1 + l2, all_pipelines)
+        self.build_tools._wait_for_pipelines(all_pipelines)

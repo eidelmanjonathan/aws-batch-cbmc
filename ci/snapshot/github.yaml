@@ -28,6 +28,11 @@ Parameters:
     Default: "proofs"
     Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
 
+  CloudfrontUrl:
+    Type: String
+    Default: ""
+    Description: "The URL for the cloudfront that serves our proof reports"
+
 Resources:
 
   S3BucketProofs:
@@ -133,6 +138,7 @@ Resources:
           PROJECT_NAME: !Ref ProjectName
           S3_BKT: !Ref S3BucketToolsName
           S3_BUCKET_PROOFS: !Ref S3BucketProofs
+          CLOUDFRONT_URL: !Ref CloudfrontUrl
           PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
           CBMC_CI_UPDATING_STATUS: True
 
