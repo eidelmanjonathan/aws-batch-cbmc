@@ -437,10 +437,8 @@ def deploy_policy(stacks, snapshot, project_params, secrets, build_tools_s3_buck
 ################################################################
 
 def chime_notification(user, snapshot_id, account_id, profile):
-    webhook = ("https://hooks.chime.aws/incomingwebhooks/" +
-               "35fb25b1-50ab-4f6f-bcc9-32b213bdfc08?token=" +
-               "RVlJdWFFZ2V8MXxzRjNpM3hEVVRENHB5M3hsalBURk9ubXdXc" +
-               "0prQlFXNi1xZmhKMlc3UEJR")
+    webhook = ("https://hooks.chime.aws/incomingwebhooks/54d322ef-1889-4a7d-9c40-210cbab227cb?"
+               "token=MHNQTHRhcU98MXxnTjhkTjNzQktReWJwalA5dmxfN1UxekRLdzIzRVlSR2EzZjduVV8tS0lB")
     headers = {"Content-type": "application/json"}
     data = {"Content":
             "@{} deployed snapshot {} in account {} ({})"
