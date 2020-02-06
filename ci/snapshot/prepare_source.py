@@ -422,7 +422,11 @@ def source_prepare():
         logger.summary(clog_writert.FAILED, vars(arg), response)
         cbmc_ci_github.update_status("error", "Proof jobs starting", None,
                                      "Failed to start proof jobs.  Likely fix: please rebase pull request against master",
-                                     arg.id, arg.sha, False)
+                                     arg.id, arg.sha,
+                                     # Do not post a custom alarm, since
+                                     # the exception will cause a
+                                     # CloudWatch alarm anyway.
+                                     no_status_metric=True)
         raise e
 
 
