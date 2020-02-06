@@ -440,3 +440,8 @@ Outputs:
     Value: !Ref GitHubBranchName
     Export:
       Name: GitHubBranchName
+
+  SnapshotID:
+    Value: !Ref SnapshotID
+    Export:
+      Name: SnapshotID

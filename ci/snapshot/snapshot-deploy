@@ -215,6 +215,7 @@ def deploy_globals(stacks, snapshot, project_params, secrets, doit=None, local=F
            "build-globals.yaml",
            ["BatchRepositoryOwner",
             "BatchRepositoryName",
+            "SnapshotID",
             "BatchRepositoryBranchName",
             "ViewerRepositoryOwner",
             "ViewerRepositoryName",

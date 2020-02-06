@@ -34,6 +34,10 @@ Parameters:
     Default: "cbmc"
     Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
 
+  SnapshotID:
+    Type: String
+    Description: Current snapshot ID that is running
+
 Resources:
 
   S3Bucket:
@@ -76,4 +80,8 @@ Outputs:
     Value: !Ref ViewerRepositoryBranchName
     Export:
       Name: ViewerRepositoryBranchName
+  SnapshotID:
+    Value: !Ref SnapshotID
+    Export:
+      Name: SnapshotID
 
