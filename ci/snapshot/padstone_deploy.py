@@ -19,6 +19,10 @@ def create_parser():
                      help="""
                      The AWS account profile for the build account."""
                      )
+    arg.add_argument('--cloudfront-profile',
+                     metavar='PROFILE',
+                     help="""
+                     AWS account profile for the cloudfront deployment""")
     arg.add_argument('--project-parameters',
                      metavar='parameters.json',
                      help="""
@@ -55,6 +59,7 @@ def create_parser():
                      help="""
                      Any packages we want to use that aren't the latest
                      """)
+
     return arg
 def parse_args():
     args = create_parser().parse_args()
@@ -63,9 +68,15 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
-                                               proof_profile=args.proof_profile,
-                                               proof_account_parameters_file=args.project_parameters)
+    if args.cloudfront_profile:
+        account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
+                                                   proof_profile=args.proof_profile,
+                                                   cloudfront_profile=args.cloudfront_profile,
+                                                   proof_account_parameters_file=args.project_parameters)
+    else:
+        account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
+                                                   proof_profile=args.proof_profile,
+                                                   proof_account_parameters_file=args.project_parameters)
 
     snapshot_to_deploy = None
     if args.generate_snapshot:
@@ -93,4 +104,8 @@ if __name__ == '__main__':
         account_orchestrator.deploy_proof_account_github()
         account_orchestrator.deploy_proof_account_stacks()
         account_orchestrator.set_proof_account_environment_variables()
+        if args.cloudfront_profile:
+            account_orchestrator.deploy_cloudfront_stacks()
+
+
 

@@ -24,6 +24,13 @@ GLOBALS_CLOUDFORMATION_DATA = {
     }
 }
 
+CLOUDFRONT_CLOUDFORMATION_DATA = {
+    "proof-results-cloudfront": {
+        TEMPLATE_NAME_KEY: "cloudfront.yaml",
+        PARAMETER_KEYS_KEY: ['S3BucketProofs']
+    }
+}
+
 BUILD_TOOLS_CLOUDFORMATION_DATA = {
     "build-batch": {
         TEMPLATE_NAME_KEY: "build-batch.yaml",

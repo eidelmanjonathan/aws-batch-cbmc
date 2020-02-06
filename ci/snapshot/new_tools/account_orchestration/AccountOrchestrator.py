@@ -2,11 +2,11 @@ from functools import reduce
 
 from new_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, BUILD_TOOLS_CLOUDFORMATION_DATA, \
     PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA, BUILD_TOOLS_BUCKET_POLICY, PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA, \
-    BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS
+    BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS, CLOUDFRONT_CLOUDFORMATION_DATA
 from new_tools.account_orchestration.AwsAccount import AwsAccount
 from new_tools.aws_managers.TemplatePackageManager import BUILD_TOOLS_IMAGE_S3_SOURCE, PROOF_ACCOUNT_IMAGE_S3_SOURCE
 from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY, \
-    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY
+    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, S3_BUCKET_PROOFS_OVERRIDE_KEY
 from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 
 
@@ -18,6 +18,7 @@ class AccountOrchestrator:
 
     def __init__(self, build_tools_profile=None,
                  proof_profile=None,
+                 cloudfront_profile=None,
                  tools_account_parameters_file=None,
                  proof_account_parameters_file=None):
 
@@ -37,6 +38,13 @@ class AccountOrchestrator:
                                             parameters_file=proof_account_parameters_file,
                                             packages_required=PROOF_ACCOUNT_PACKAGES,
                                             snapshot_s3_prefix=PROOF_SNAPSHOT_PREFIX)
+
+        if cloudfront_profile:
+            self.cloudfront_account = AwsAccount(profile=cloudfront_profile,
+                                                 shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name,
+                                                 parameters_file=proof_account_parameters_file,
+                                                 packages_required=PROOF_ACCOUNT_PACKAGES,
+                                                 snapshot_s3_prefix=PROOF_SNAPSHOT_PREFIX)
 
     @staticmethod
     def parse_snapshot_id(output):
@@ -117,6 +125,14 @@ class AccountOrchestrator:
                                          overrides={
                                              BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
                                          })
+
+    def deploy_cloudfront_stacks(self):
+        self.cloudfront_account.deploy_stacks(CLOUDFRONT_CLOUDFORMATION_DATA,
+                                              s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
+                                              overrides={
+                                                  BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
+                                                  S3_BUCKET_PROOFS_OVERRIDE_KEY: self.proof_account.get_s3_proof_bucket_name()
+                                              })
 
     def get_account_snapshot_id(self, source_profile):
         return AwsAccount(profile=source_profile,

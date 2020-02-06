@@ -135,7 +135,7 @@ class AwsAccount:
         if not template_body and not template_url:
             raise Exception("Must provide either the body of the template being deployed, "
                             "or a url to download it from S3")
-
+        print(template_url)
         if self.stacks.get_status(stack_name) is None:
             print("\nCreating stack '{}' with parameters".format(stack_name))
             AwsAccount.print_parameters(parameters)
@@ -184,6 +184,9 @@ class AwsAccount:
 
     def get_update_github_status(self):
         return str2bool(self.parameter_manager.get_value("UpdateGithub"))
+
+    def get_s3_proof_bucket_name(self):
+        return self.parameter_manager.get_value("S3BucketProofs")
 
     def _trigger_pipelines(self, pipelines):
         for pipeline in pipelines:

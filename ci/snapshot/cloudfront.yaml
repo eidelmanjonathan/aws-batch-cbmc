@@ -1,0 +1,188 @@
+# Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+
+  S3BucketProofs:
+    Type: String
+    Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
+
+Resources:
+
+  S3AccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: "S3 Bucket access identity"
+
+  TheBucketPolicy2:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketProofs
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref S3BucketProofs, "/*/out/*" ] ]
+            Principal:
+              CanonicalUser: !GetAtt S3AccessIdentity.S3CanonicalUserId
+
+
+  LambdaEdgeFunctionSample:
+      Type: AWS::Lambda::Function
+      Properties:
+        Role: !GetAtt LambdaEdgeFunctionRole.Arn
+        Runtime: python3.7
+        Handler: index.lambda_handler
+        Timeout: 5
+#        AutoPublishAlias: live
+        Code:
+          ZipFile: !Sub |
+            import boto3
+            PROOFS_BKT = "${S3BucketProofs}"
+            def lambda_handler(event, context):
+              request = event['Records'][0]['cf']['request']
+              headers = request['headers']
+              print(event)
+              s3_filename = request['uri']
+              print(s3_filename)
+              s3_obj = boto3.client("s3").get_object(Bucket=PROOFS_BKT, Key=s3_filename[1:])
+              print(s3_obj)
+              if "Metadata" in s3_obj.keys() and  "cbmc" in s3_obj['Metadata'].keys() and  s3_obj['Metadata']["cbmc"] == "True":
+                print("This file is good!")
+              else:
+                raise Exception("Tried to access bad file!")
+              headers['strict-transport-security'] = [{'key': 'Strict-Transport-Security', 'value': 'max-age=63072000; includeSubdomains; preload'}]
+              headers['content-security-policy'] = [{'key': 'Content-Security-Policy', 'value': "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"}]
+              headers['x-content-type-options'] = [{'key': 'X-Content-Type-Options', 'value': 'nosniff'}]
+              headers['x-frame-options'] = [{'key': 'X-Frame-Options', 'value': 'DENY'}]
+              headers['x-xss-protection'] = [{'key': 'X-XSS-Protection', 'value': '1; mode=block'}]
+              headers['referrer-policy'] = [{'key': 'Referrer-Policy', 'value': 'same-origin'}]
+              return request
+  IndexLambdaVersion:
+    Type: Custom::LatestLambdaVersion
+    Properties:
+      ServiceToken: !GetAtt PublishLambdaVersion.Arn
+      FunctionName: !Ref LambdaEdgeFunctionSample
+#      Nonce: !Ref Nonce
+
+  # Custom resource for getting latest version of a lambda,
+  # as required by CloudFront.
+
+  PublishLambdaVersion:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs8.10
+      Role: !GetAtt PublishLambdaVersionRole.Arn
+      Code:
+        ZipFile: |
+          const {Lambda} = require('aws-sdk')
+          const {send, SUCCESS, FAILED} = require('cfn-response')
+          const lambda = new Lambda()
+          exports.handler = (event, context) => {
+            const {RequestType, ResourceProperties: {FunctionName}} = event
+            if (RequestType == 'Delete') return send(event, context, SUCCESS)
+            lambda.publishVersion({FunctionName}, (err, {FunctionArn}) => {
+              err
+                ? send(event, context, FAILED, err)
+                : send(event, context, SUCCESS, {FunctionArn})
+            })
+          }
+  PublishLambdaVersionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: PublishVersion
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:PublishVersion
+                Resource: '*'
+
+  WebsiteCloudfront:
+    Type: AWS::CloudFront::Distribution
+    DependsOn:
+      - S3AccessIdentity
+      - LambdaEdgeFunctionSample
+    Properties:
+      DistributionConfig:
+        Comment: Cloudfront Distribution pointing to S3 bucket
+        Origins:
+          - DomainName: !Sub "${S3BucketProofs}.s3.amazonaws.com"
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Join [ "", [ "origin-access-identity/cloudfront/", !Ref S3AccessIdentity ] ]
+        Enabled: true
+        HttpVersion: 'http2'
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+          LambdaFunctionAssociations:
+            - EventType: viewer-request
+              LambdaFunctionARN: !GetAtt IndexLambdaVersion.FunctionArn
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+
+
+  LambdaEdgeFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+        Path: "/"
+        ManagedPolicyArns:
+            - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            -
+              Sid: "AllowLambdaServiceToAssumeRole"
+              Effect: "Allow"
+              Action:
+                - "sts:AssumeRole"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+                  - "edgelambda.amazonaws.com"
+        Policies:
+          - PolicyName: !Sub "cloudfront-lambda-policy-${AWS::Region}"
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Effect: Allow
+                  Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                - Action:
+                    - s3:GetObject
+                  Effect: Allow
+                  Resource: !Join ["/", [!Sub "arn:aws:s3:::${S3BucketProofs}", "*"]]
+
+Outputs:
+  CloudfrontUrl:
+    Value: !GetAtt WebsiteCloudfront.DomainName
