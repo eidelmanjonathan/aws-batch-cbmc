@@ -95,6 +95,7 @@ PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA = {
                              'BuildToolsAccountId',
                              'ProjectName',
                              'SnapshotID',
+                             "CloudfrontUrl",
                              'GitHubRepository',
                              'GitHubBranchName']
     }

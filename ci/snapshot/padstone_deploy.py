@@ -59,7 +59,10 @@ def create_parser():
                      help="""
                      Any packages we want to use that aren't the latest
                      """)
-    arg.add_argument("--wait-pipelines")
+    arg.add_argument("--wait-pipelines",
+                     action="store_true",
+                     help="""wait for build pipelines to finish before starting"""
+                     )
 
     return arg
 def parse_args():
