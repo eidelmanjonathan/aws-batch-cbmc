@@ -445,3 +445,8 @@ Outputs:
     Value: !Ref SnapshotID
     Export:
       Name: SnapshotID
+
+  S3BucketProofs:
+    Value: !Ref S3BucketProofs
+    Export:
+      Name: S3BucketProofs
