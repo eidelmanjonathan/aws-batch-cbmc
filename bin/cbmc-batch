@@ -33,11 +33,11 @@ def prepare_paths(opts, quiet=True):
             abort("Bucket does not exist: {}".format(bkt))
 
     if opts['copysrc']:
-        s3.sync_directory_to_bucket(opts['srcdir'], opts['srcbucket'], quiet)
+        s3.sync_directory_to_bucket(opts['srcdir'], opts['srcbucket'], quiet, metadata={"cbmc":"True"})
     if opts['copyws']:
-        s3.sync_directory_to_bucket(opts['wsdir'], opts['wsbucket'], quiet)
+        s3.sync_directory_to_bucket(opts['wsdir'], opts['wsbucket'], quiet, metadata={"cbmc":"True"})
     if opts['copyout']:
-        s3.sync_directory_to_bucket(opts['outdir'], opts['outbucket'], quiet)
+        s3.sync_directory_to_bucket(opts['outdir'], opts['outbucket'], quiet, metadata={"cbmc":"True"})
 
 def consume_paths(opts, quiet=True):
     """Copy the output path"""
