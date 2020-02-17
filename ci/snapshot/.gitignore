@@ -3,3 +3,4 @@ snapshot-*-*
 snapshot.json
 parameters.json
 __pycache__
+tool_account_images
