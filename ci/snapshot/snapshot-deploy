@@ -9,16 +9,17 @@ import os
 import textwrap
 import requests
 
-import botocore_amazon.monkeypatch
 import boto3
 import botocore
+import botocore_amazon.monkeypatch
 
-import stackst
+
 import snapshott
 import secretst
 
 ################################################################
 from project_params import ProjectParams
+from stackst import Stacks
 
 
 def create_parser():
@@ -215,6 +216,7 @@ def deploy_globals(stacks, snapshot, project_params, secrets, doit=None, local=F
            "build-globals.yaml",
            ["BatchRepositoryOwner",
             "BatchRepositoryName",
+            "SnapshotID",
             "BatchRepositoryBranchName",
             "ViewerRepositoryOwner",
             "ViewerRepositoryName",
@@ -437,8 +439,10 @@ def deploy_policy(stacks, snapshot, project_params, secrets, build_tools_s3_buck
 ################################################################
 
 def chime_notification(user, snapshot_id, account_id, profile):
-    webhook = ("https://hooks.chime.aws/incomingwebhooks/54d322ef-1889-4a7d-9c40-210cbab227cb?"
-               "token=MHNQTHRhcU98MXxnTjhkTjNzQktReWJwalA5dmxfN1UxekRLdzIzRVlSR2EzZjduVV8tS0lB")
+    webhook = ("https://hooks.chime.aws/incomingwebhooks/" +
+               "35fb25b1-50ab-4f6f-bcc9-32b213bdfc08?token=" +
+               "RVlJdWFFZ2V8MXxzRjNpM3hEVVRENHB5M3hsalBURk9ubXdXc" +
+               "0prQlFXNi1xZmhKMlc3UEJR")
     headers = {"Content-type": "application/json"}
     data = {"Content":
             "@{} deployed snapshot {} in account {} ({})"
@@ -480,7 +484,7 @@ def main():
     args = create_parser().parse_args()
 
     session = boto3.session.Session(profile_name=args.profile)
-    stacks = stackst.Stacks(session)
+    stacks = Stacks(session)
     snapshot = None
     build_tools_bucket = None
     project_params = ProjectParams(filename=args.project_params)
@@ -488,7 +492,7 @@ def main():
     # If we are deploying a proof/prod account, we must get the snapshot from the shared build account
     if args.snapshotid and args.prod:
         build_session = boto3.session.Session(profile_name=args.build_profile)
-        build_stacks = stackst.Stacks(build_session)
+        build_stacks = Stacks(build_session)
         snapshot_id = args.snapshotid
         snapshot_file = "snapshot-{}.json".format(snapshot_id)
         build_tools_bucket = build_stacks.get_output("S3BucketName")

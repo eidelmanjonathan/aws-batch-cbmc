@@ -4,10 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import botocore_amazon.monkeypatch
 import boto3
 
-import stackst
+from aws_managers import CloudformationStack
+
 
 ################################################################
 
@@ -44,7 +44,7 @@ PROD_STACKS = ['cbmc-batch', 'github', 'canary', 'alarms-prod']
 def main():
     args = create_parser().parse_args()
     session = boto3.session.Session(profile_name=args.profile)
-    stacks = stackst.Stacks(session)
+    stacks = CloudformationStack.Stacks(session)
 
     if args.build:
         stacks.display(BUILD_STACKS)
