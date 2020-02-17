@@ -273,7 +273,7 @@ def checkout_repository(sha=None, branch=None, srcdir=None):
     checkout = sha or branch
     if checkout is None:
         return
-    cmd = ['git', 'checkout', checkout]
+    cmd = ['git', 'checkout', '--recurse-submodules', checkout]
     run_command(cmd, srcdir)
 
 ################################################################
