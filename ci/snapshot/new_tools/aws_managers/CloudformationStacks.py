@@ -1,4 +1,4 @@
-# Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import time
@@ -9,6 +9,8 @@ class CloudformationStacks():
     """
     This class manages stacks in Cloudformation. It is responsible for deploying and waiting for stacks,
     as well as dealing with the parameters and output variables
+    TODO: This is a straight copy paste of the old stackst.py script. I think that this file could still be improved
+        substantially but it is out of scope for now
     """
     def __init__(self, session):
         self.session = session

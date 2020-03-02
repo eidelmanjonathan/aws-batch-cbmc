@@ -5,6 +5,7 @@ import boto3
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
                               "There should only be one statement. Bucket policy should only be updated " \
                               "with CloudFormation template. Aborting!"
+MISSING_BUCKET_POLICY_MESSAGE = "An error occurred (NoSuchBucketPolicy) when calling the GetBucketPolicy operation: The bucket policy does not exist"
 class BucketPolicyManager:
     """
     This class manages changes to S3 bucket policies. The purpose of this is to grant read access to CI accounts to a
@@ -12,10 +13,22 @@ class BucketPolicyManager:
     guaranteeing similar behaviour between accounts.
     """
 
-    def __init__(self, profile, shared_tool_bucket_name):
-        self.session = boto3.session.Session(profile_name=profile)
+    def __init__(self, session, shared_tool_bucket_name):
+        self.session = session
         self.shared_tool_bucket_name = shared_tool_bucket_name
         self.s3 = self.session.client("s3")
+
+    @staticmethod
+    def _verify_missing_policy_exception(e):
+        """
+        If we have a missing bucket policy, do nothing, for any other exception, raise it
+        :param e: an exception
+        """
+        if str(e) == MISSING_BUCKET_POLICY_MESSAGE:
+            print("Could not find an existing bucket policy. Creating a new one")
+            return
+        else:
+            raise e
 
     def get_existing_bucket_policy_accounts(self):
         """
@@ -26,8 +39,10 @@ class BucketPolicyManager:
         try:
             result = self.s3.get_bucket_policy(Bucket=self.shared_tool_bucket_name)
         # FIXME: I couldn't seem to import the specific exception here
-        except Exception:
-            print("Could not find an existing bucket policy. Creating a new one")
+        except Exception as e:
+            # If the exception is that there is no bucket policy, we can safely create one
+            # If there is any other exception, raise it and error out
+            self._verify_missing_policy_exception(e)
             return []
         policy_json = json.loads(result["Policy"])
 
@@ -35,17 +50,18 @@ class BucketPolicyManager:
             raise Exception(UNEXPECTED_POLICY_MSG)
 
         policy = policy_json["Statement"][0]["Principal"]["AWS"]
+        # Make sure policy is a list and not a single object
+        policy = policy if isinstance(policy, list) else [policy]
+
         action = policy_json["Statement"][0]["Action"]
         if set(action) != {"s3:GetObject", "s3:ListBucket"}:
             raise Exception(UNEXPECTED_POLICY_MSG)
 
-        if isinstance(policy, list):
-            account_ids = list(map(lambda a: a.replace("arn:aws:iam::", "").replace(":root", ""), policy))
-        else:
-            account_ids = [policy.replace("arn:aws:iam::", "").replace(":root", "")]
+        account_ids = list(map(lambda a: a.replace("arn:aws:iam::", "").replace(":root", ""), policy))
+
         return account_ids
 
-    def add_account_to_bucket_policy(self, accountIdToAdd):
+    def build_bucket_policy_arns_list(self, accountIdToAdd):
         """
         Returns the list of arns we would need to allow in the bucket policy if we are trying to add
         the given accountIdToAdd, as a comma separated string

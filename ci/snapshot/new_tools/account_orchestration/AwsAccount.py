@@ -1,7 +1,6 @@
 import boto3
 import botocore
 
-from new_tools.account_orchestration.stacks_data import BUILD_TOOLS_PACKAGES
 from new_tools.aws_managers.LambdaManager import LambdaManager
 from new_tools.aws_managers.CodebuildManager import CodebuildManager
 from new_tools.aws_managers.key_constants import PIPELINES_KEY, PARAMETER_KEYS_KEY, TEMPLATE_NAME_KEY
@@ -10,12 +9,14 @@ from new_tools.aws_managers.PipelineManager import PipelineManager
 from new_tools.aws_managers.TemplatePackageManager import TemplatePackageManager
 from new_tools.aws_managers.CloudformationStacks import CloudformationStacks
 from new_tools.image_managers.SnapshotManager import SnapshotManager
-from new_tools.utilities.utilities import parse_json_file, str2bool
+from new_tools.utilities.utilities import parse_json_file, str2bool, print_parameters
 from secretst import Secrets
 
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \
                               "There should only be one statement. Bucket policy should only be updated " \
                               "with CloudFormation template. Aborting!"
+VALIDATION_ERROR = 'ValidationError'
+NO_UPDATES_MSG = 'No updates are to be performed.'
 class AwsAccount:
     """
     This class is responsible for managing a Padstone CI AWS account. It exposes methods to deploy stacks,
@@ -39,75 +40,74 @@ class AwsAccount:
         self.s3 = self.session.client("s3")
         self.ecr = self.session.client("ecr")
         self.secrets = Secrets(self.session)
-        self.lambda_manager = LambdaManager(self.profile)
-        self.codebuild = CodebuildManager(self.profile)
+        self.lambda_manager = LambdaManager(self.session)
+        self.codebuild = CodebuildManager(self.session)
         self.pipeline_client = self.session.client("codepipeline")
         self.snapshot_s3_prefix = snapshot_s3_prefix
 
-        self.parameters = None
-        if parameters_file:
-            self.parameters = parse_json_file(parameters_file)
+        self.parameters = parse_json_file(parameters_file) if parameters_file else None
 
         # The tools bucket could either be in the target profile, or from another account
         self.shared_tool_bucket_name = shared_tool_bucket_name if shared_tool_bucket_name \
             else self.stacks.get_output('S3BucketName')
-        self.snapshot_manager = SnapshotManager(profile,
+        self.snapshot_manager = SnapshotManager(self.session,
                                                 bucket_name=self.shared_tool_bucket_name,
                                                 packages_required=packages_required,
                                                 tool_image_s3_prefix=snapshot_s3_prefix)
-        self.snapshot = None
         self.snapshot_id = snapshot_id
+
+        self.snapshot = None
         if self.snapshot_id:
             self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id)
 
-        self.parameter_manager = ParameterManager(profile, self.stacks,
+        self.parameter_manager = ParameterManager(self.session, self.stacks,
                                                   snapshot_id=self.snapshot_id,
                                                   snapshot=self.snapshot,
-                                                  proof_account_project_parameters=self.parameters,
-                                                  shared_tool_bucket_name=self.shared_tool_bucket_name)
-        self.pipeline_manager = PipelineManager(profile)
-        self.template_package_manager = TemplatePackageManager(self.profile,
+                                                  shared_tools_bucket=self.shared_tool_bucket_name,
+                                                  project_parameters=self.parameters)
+        self.pipeline_manager = PipelineManager(self.session)
+        self.template_package_manager = TemplatePackageManager(self.session,
                                                                self.parameter_manager,
-                                                               self.shared_tool_bucket_name, snapshot_id=self.snapshot_id, s3_snapshot_prefix=self.snapshot_s3_prefix)
+                                                               self.shared_tool_bucket_name, snapshot_id=self.snapshot_id,
+                                                               s3_snapshot_prefix=self.snapshot_s3_prefix)
 
     def get_current_snapshot_id(self):
         if self.snapshot_id:
             return self.snapshot_id
         else:
-            return self.parameter_manager.get_value_from_stacks("SnapshotID")
+            return self.parameter_manager.get_value("SnapshotID")
+
+    def set_env_var(self, obj, a, b, bool_val):
+        if not isinstance(bool_val, bool):
+            raise Exception("Trying to set an env variable to illegal value")
+        obj.set_env_var(a, b, bool_val)
+        print(obj.get_env_var(a, b))
 
     def set_ci_operating(self, is_ci_operating):
-        if not isinstance(is_ci_operating, bool):
-            raise Exception("Trying to set an env variable to illegal value")
-        self.lambda_manager.set_env_var('webhook', 'ci_operational', str(is_ci_operating))
-        print(self.lambda_manager.get_env_var('webhook', 'ci_operational'))
+        self.set_env_var(self.lambda_manager, 'webhook', 'ci_operational', str(is_ci_operating))
 
     def set_update_github(self, github_update):
-        if not isinstance(github_update, bool):
-            raise Exception("Trying to set an env variable to illegal value")
-        self.lambda_manager.set_env_var('batchstatus', 'ci_updating_status', str(github_update))
-        self.codebuild.set_env_var('prepare', 'ci_updating_status', str(github_update))
-        print(self.lambda_manager.get_env_var('batchstatus', 'ci_updating_status'))
-        print(self.codebuild.get_env_var('prepare', 'ci_updating_status'))
+        self.set_env_var(self.lambda_manager, 'batchstatus', 'ci_updating_status', github_update)
+        self.set_env_var(self.codebuild, 'prepare', 'ci_updating_status', github_update)
 
-    def download_snapshot(self, snapshot_id):
+    def download_and_set_snapshot(self, snapshot_id):
         self.snapshot_id = snapshot_id
         self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id)
         self.parameter_manager = ParameterManager(self.profile, self.stacks,
                                                   snapshot=self.snapshot,
                                                   snapshot_id=self.snapshot_id,
-                                                  proof_account_project_parameters=self.parameters,
-                                                  shared_tool_bucket_name=self.shared_tool_bucket_name)
+                                                  project_parameters=self.parameters,
+                                                  shared_tools_bucket=self.shared_tool_bucket_name)
         self.template_package_manager = TemplatePackageManager(self.profile,
                                                                self.parameter_manager,
                                                                self.shared_tool_bucket_name, snapshot_id=self.snapshot_id, s3_snapshot_prefix=self.snapshot_s3_prefix)
 
-    @staticmethod
-    def print_parameters(parameters):
-        for param in parameters:
-            print("  {:20}: {}".format(param['ParameterKey'], param['ParameterValue']))
 
     def _create_stack(self, stack_name, parameters, template_body=None, template_url=None):
+        if not template_url and not template_body:
+            raise Exception("Must provide either template_url or template body")
+        if template_url and template_body:
+            raise Exception("Cannot provide both template url and template body")
         if template_body:
             self.stacks.get_client().create_stack(StackName=stack_name,
                                                   TemplateBody=template_body,
@@ -119,6 +119,10 @@ class AwsAccount:
                                                   Parameters=parameters,
                                                   Capabilities=AwsAccount.CAPABILITIES)
     def _update_stack(self, stack_name, parameters, template_body=None, template_url=None):
+        if not template_url and not template_body:
+            raise Exception("Must provide either template_url or template body")
+        if template_url and template_body:
+            raise Exception("Cannot provide both template url and template body")
         if template_body:
             self.stacks.get_client().update_stack(StackName=stack_name,
                                                   TemplateBody=template_body,
@@ -138,13 +142,13 @@ class AwsAccount:
 
         if self.stacks.get_status(stack_name) is None:
             print("\nCreating stack '{}' with parameters".format(stack_name))
-            AwsAccount.print_parameters(parameters)
+            print_parameters(parameters)
             print("Using " + template_name)
             self._create_stack(stack_name, parameters, template_body=template_body,
                                template_url=template_url)
         else:
             print("\nUpdating stack '{}' with parameters".format(stack_name))
-            AwsAccount.print_parameters(parameters)
+            print_parameters(parameters)
             print("Using " + template_name)
             self._update_stack(stack_name, parameters, template_body=template_body,
                                template_url=template_url)
@@ -161,14 +165,14 @@ class AwsAccount:
         :param parameter_overrides: User provided values for parameters
         :return:
         """
-        template_url = None
-        template_body = None
         if s3_template_source:
+            template_body = None
             template_url = self.template_package_manager\
                 .get_s3_url_for_template(template_name, parameter_overrides)
-            print(template_url)
+            print("Using S3 template at url: {}".format(template_url))
 
         else:
+            template_url = None
             template_body = open(template_name).read()
         parameters = self.parameter_manager.make_stack_parameters(parameter_keys, parameter_overrides)
         try:
@@ -177,7 +181,7 @@ class AwsAccount:
         except botocore.exceptions.ClientError as err:
             code = err.response['Error']['Code']
             msg = err.response['Error']['Message']
-            if code == 'ValidationError' and msg == 'No updates are to be performed.':
+            if code == VALIDATION_ERROR and msg == NO_UPDATES_MSG:
                 print("Nothing to update")
             else:
                 raise
@@ -187,7 +191,7 @@ class AwsAccount:
 
     def _trigger_pipelines(self, pipelines):
         for pipeline in pipelines:
-            self.pipeline_manager.trigger_pipeline(pipeline)
+            self.pipeline_manager.trigger_pipeline_async(pipeline)
 
     def _wait_for_pipelines(self, pipelines):
         for pipeline in pipelines:
@@ -218,6 +222,7 @@ class AwsAccount:
         stack_names = stacks_to_deploy.keys()
         if not self.stacks.stable_stacks(stack_names):
             print("Stacks not stable: {}".format(stack_names))
+            print("Check on status in AWS console, maybe there was a rollback?")
             return
         pipelines = []
         for key in stacks_to_deploy.keys():
@@ -231,6 +236,6 @@ class AwsAccount:
         self._wait_for_pipelines(pipelines)
 
 
-    def trigger_pipelines(self, pipelines):
+    def trigger_and_wait_for_pipelines(self, pipelines):
         self._trigger_pipelines(pipelines)
         self._wait_for_pipelines(pipelines)

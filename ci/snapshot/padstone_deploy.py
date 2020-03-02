@@ -3,6 +3,8 @@ import json
 import logging
 
 from new_tools.account_orchestration.AccountOrchestrator import AccountOrchestrator
+from new_tools.aws_managers.BucketPolicyManager import BucketPolicyManager
+
 
 def create_parser():
     arg = argparse.ArgumentParser(description="""
@@ -22,7 +24,7 @@ def create_parser():
     arg.add_argument('--project-parameters',
                      metavar='parameters.json',
                      help="""
-                     The project specific parameters we want to pass in
+                     The filename of the json file with project specific parameters we want to pass in
                      """
                      )
     arg.add_argument('--generate-snapshot',
@@ -51,9 +53,9 @@ def create_parser():
                      Account whose snapshot we want to deploy
                      """)
     arg.add_argument("--package-overrides",
-                     metavar="PROFILE",
+                     metavar="package_overrides.json",
                      help="""
-                     Any packages we want to use that aren't the latest
+                     filename of a json file with packages we want to use that aren't the latest
                      """)
     return arg
 def parse_args():
@@ -61,19 +63,23 @@ def parse_args():
     logging.info('Arguments: %s', args)
     return args
 
+def get_package_overrides(overrides_filename):
+    with open(overrides_filename) as f:
+        return json.loads(f.read())
+
 if __name__ == '__main__':
     args = parse_args()
-    account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
-                                               proof_profile=args.proof_profile,
+    account_orchestrator = AccountOrchestrator(build_tools_account_profile=args.build_profile,
+                                               proof_account_profile=args.proof_profile,
                                                proof_account_parameters_file=args.project_parameters)
-
+    if args.generate_snapshot and args.snapshot_id:
+        raise Exception("Should not provide a snapshot ID if you are trying to generate a new snapshot")
+    account_orchestrator.add_proof_account_to_shared_bucket_policy()
     snapshot_to_deploy = None
     if args.generate_snapshot:
         package_overrides = None
         if args.package_overrides:
-            with open(args.package_overrides) as f:
-                package_overrides = json.loads(f.read())
-        account_orchestrator.add_proof_account_to_shared_bucket_policy()
+            package_overrides = get_package_overrides(args.package_overrides)
         snapshot_to_deploy = account_orchestrator\
             .generate_new_proof_account_snapshot(overrides=package_overrides)
         print("Generated snapshot: {}".format(snapshot_to_deploy))
@@ -87,8 +93,6 @@ if __name__ == '__main__':
     if args.deploy_snapshot:
         if not snapshot_to_deploy:
             raise Exception("Must provide snapshot ID to deploy or generate new snapshot")
-        if not args.generate_snapshot:
-            account_orchestrator.add_proof_account_to_shared_bucket_policy()
         account_orchestrator.use_existing_proof_account_snapshot(snapshot_to_deploy)
         account_orchestrator.deploy_proof_account_github()
         account_orchestrator.deploy_proof_account_stacks()

@@ -14,25 +14,31 @@ class AccountOrchestrator:
     """
     This class exposes methods to generate new snapshots of Padstone CI AWS accounts, as well as deploying the various
     kinds of stacks necessary to run CI.
-    """
 
-    def __init__(self, build_tools_profile=None,
-                 proof_profile=None,
+    """
+    def __init__(self, build_tools_account_profile=None,
+                 proof_account_profile=None,
                  tools_account_parameters_file=None,
                  proof_account_parameters_file=None):
+        """
 
+        :param build_tools_account_profile: string - name of your aws tools profile from your aws config file
+        :param proof_account_profile: string - name of your aws proof profile from your aws config file
+        :param tools_account_parameters_file: string - filename of a json file giving parameters for the tool account
+        :param proof_account_parameters_file: string - filename of a json file giving parameters for the proof account
+        """
 
-        self.build_tools = AwsAccount(build_tools_profile,
+        self.build_tools = AwsAccount(build_tools_account_profile,
                                       parameters_file=tools_account_parameters_file,
                                       packages_required=BUILD_TOOLS_PACKAGES,
                                       snapshot_s3_prefix=TOOLS_SNAPSHOT_PREFIX)
 
-        if proof_profile:
-            self.proof_account_write_access_snapshot = SnapshotManager(build_tools_profile,
-                                                             bucket_name=self.build_tools.shared_tool_bucket_name,
-                                                             packages_required=PROOF_ACCOUNT_PACKAGES,
-                                                             tool_image_s3_prefix=PROOF_SNAPSHOT_PREFIX)
-            self.proof_account = AwsAccount(profile=proof_profile,
+        if proof_account_profile:
+            self.proof_account_write_access_snapshot = SnapshotManager(build_tools_account_profile,
+                                                                       bucket_name=self.build_tools.shared_tool_bucket_name,
+                                                                       packages_required=PROOF_ACCOUNT_PACKAGES,
+                                                                       tool_image_s3_prefix=PROOF_SNAPSHOT_PREFIX)
+            self.proof_account = AwsAccount(profile=proof_account_profile,
                                             shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name,
                                             parameters_file=proof_account_parameters_file,
                                             packages_required=PROOF_ACCOUNT_PACKAGES,
@@ -49,7 +55,8 @@ class AccountOrchestrator:
             raise UserWarning("snapshot id is none")
         return sid
 
-    def deploy_globals(self, deploy_from_local_template=False):
+    def deploy_globals_stack(self, deploy_from_local_template=False):
+        # TODO: Should this stack be called globals?
         # If we are deploying a particular image
         s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
         param_overrides = {
@@ -96,19 +103,19 @@ class AccountOrchestrator:
                                          })
 
     def use_existing_proof_account_snapshot(self, snapshot_id):
-        self.proof_account.download_snapshot(snapshot_id)
+        self.proof_account.download_and_set_snapshot(snapshot_id)
 
     def use_existing_tool_account_snapshot(self, snapshot_id):
-        self.build_tools.download_snapshot(snapshot_id)
+        self.build_tools.download_and_set_snapshot(snapshot_id)
 
     def generate_new_tool_account_snapshot(self):
-        snapshot_id = self.build_tools.snapshot_manager.generate_new_image_from_latest()
-        self.build_tools.download_snapshot(snapshot_id)
+        snapshot_id = self.build_tools.snapshot_manager.generate_new_snapshot_from_latest()
+        self.build_tools.download_and_set_snapshot(snapshot_id)
         return snapshot_id
 
     def generate_new_proof_account_snapshot(self, overrides=None):
-        snapshot_id = self.proof_account_write_access_snapshot.generate_new_image_from_latest(overrides=overrides)
-        self.proof_account.download_snapshot(snapshot_id)
+        snapshot_id = self.proof_account_write_access_snapshot.generate_new_snapshot_from_latest(overrides=overrides)
+        self.proof_account.download_and_set_snapshot(snapshot_id)
         return snapshot_id
 
     def deploy_proof_account_stacks(self):
@@ -133,4 +140,4 @@ class AccountOrchestrator:
         all_pipelines = map(lambda k: BUILD_TOOLS_CLOUDFORMATION_DATA[k][PIPELINES_KEY],
                             BUILD_TOOLS_CLOUDFORMATION_DATA.keys())
         all_pipelines = reduce(lambda l1, l2: l1 + l2, all_pipelines)
-        self.build_tools.trigger_pipelines(all_pipelines)
+        self.build_tools.trigger_and_wait_for_pipelines(all_pipelines)

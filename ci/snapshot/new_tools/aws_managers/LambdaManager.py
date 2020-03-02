@@ -1,7 +1,7 @@
 import boto3
 import botocore_amazon.monkeypatch
 
-from new_tools.utilities.utilities import find_string_match
+from new_tools.utilities.utilities import find_string_match_ignore_case
 
 
 class LambdaManager:
@@ -9,36 +9,37 @@ class LambdaManager:
     This class allows us to manage AWS Lambda. Specifically, it exposes methods to get and modify environment
     variables such as whether CI should update github or not.
     """
+
+    # Lambda parameters as described in https://docs.aws.amazon.com/lambda/latest/dg/configuration-console.html
     LAMBDA_KEYS = [
-        'FunctionName',
-        'Role',
-        'Handler',
-        'Description',
-        'Timeout',
-        'MemorySize',
-        'VpcConfig',
-        'Environment',
-        'Runtime',
         'DeadLetterConfig',
+        'Description',
+        'Environment',
+        'FunctionName',
+        'Handler',
         'KMSKeyArn',
-        'TracingConfig',
+        'Layers',
+        'MemorySize',
         'RevisionId',
-        'Layers'
+        'Role', 'Runtime',
+        'Timeout',
+        'TracingConfig',
+        'VpcConfig'
     ]
 
     LAMBDA_VPCCONFIG_KEYS = [
-        'SubnetIds',
-        'SecurityGroupIds'
+        'SecurityGroupIds',
+        'SubnetIds'
     ]
 
-    def __init__(self, profile):
-        self.session = boto3.session.Session(profile_name=profile)
+    def __init__(self, session):
+        self.session = session
         self.lambda_client = self.session.client("lambda")
 
     def get_function_name(self, function):
         """Return function name containing 'function' (case insensitive)"""
         names = [fnc['FunctionName'] for fnc in self.lambda_client.list_functions()['Functions']]
-        name = find_string_match(function, names)
+        name = find_string_match_ignore_case(function, names)
         if name is None:
             raise Exception("No single function with name {} in {}".format(function, names))
         return name
@@ -50,20 +51,16 @@ class LambdaManager:
     def get_variable_name(self, variables, var):
         """Return variable name containing 'var' (case insensitive)"""
         names = list(variables.keys())
-        name = find_string_match(var, names)
+        name = find_string_match_ignore_case(var, names)
         if name is None:
             raise Exception("No single variable with name {} in {}".format(var, names))
         return name
 
     def set_variables(self, function, variables):
         cfg = self.lambda_client.get_function_configuration(FunctionName=function)
-        for key in list(cfg.keys()):
-            if key not in self.LAMBDA_KEYS:
-                del cfg[key]
+        cfg = dict(filter(lambda item: item.key in self.LAMBDA_KEYS, cfg))
         if cfg.get('VpcConfig'):
-            for key in list(cfg['VpcConfig'].keys()):
-                if key not in self.LAMBDA_VPCCONFIG_KEYS:
-                    del cfg['VpcConfig'][key]
+            cfg['VpcConfig'] = dict(filter(lambda item: item.key in self.LAMBDA_VPCCONFIG_KEYS, cfg['VpcConfig']))
         cfg['Environment']['Variables'] = variables
         self.lambda_client.update_function_configuration(**cfg)
 

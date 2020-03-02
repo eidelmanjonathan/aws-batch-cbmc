@@ -51,10 +51,10 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    account_orchestrator = AccountOrchestrator(build_tools_profile=args.build_profile,
+    account_orchestrator = AccountOrchestrator(build_tools_account_profile=args.build_profile,
                                                tools_account_parameters_file=args.tools_parameters)
     if args.bootstrap_from_local_templates:
-        account_orchestrator.deploy_globals(deploy_from_local_template=True)
+        account_orchestrator.deploy_globals_stack(deploy_from_local_template=True)
         account_orchestrator.deploy_build_tools(deploy_from_local_template=True)
 
     snapshot_to_deploy = None
@@ -71,7 +71,7 @@ if __name__ == '__main__':
         if not snapshot_to_deploy:
             raise Exception("Must provide snapshot ID to deploy or generate new snapshot")
         account_orchestrator.use_existing_tool_account_snapshot(snapshot_to_deploy)
-        account_orchestrator.deploy_globals()
+        account_orchestrator.deploy_globals_stack()
         account_orchestrator.deploy_build_tools()
         account_orchestrator.deploy_build_alarms()
 
