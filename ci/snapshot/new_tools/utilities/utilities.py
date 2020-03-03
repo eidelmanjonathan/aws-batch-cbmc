@@ -21,7 +21,7 @@ def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1")
 
 def remove_substring(s, sub):
-    s.replace(sub, "")
+    return s.replace(sub, "")
 
 def print_parameters(parameters):
     for param in parameters:

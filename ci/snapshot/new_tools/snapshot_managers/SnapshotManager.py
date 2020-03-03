@@ -144,8 +144,8 @@ class SnapshotManager:
             f.write(json.dumps(package_filenames))
 
     def _get_most_recent_cbmc_image(self):
-        return remove_substring(self.ecr.list_images(repositoryName=CBMC_REPO_NAME)[IMAGE_IDS_KEY][0][IMAGE_TAG_KEY],
-                                UBUNTU_IMAGE_PREFIX)
+        image_name = self.ecr.list_images(repositoryName=CBMC_REPO_NAME)[IMAGE_IDS_KEY][0][IMAGE_TAG_KEY]
+        return remove_substring(image_name, UBUNTU_IMAGE_PREFIX)
 
     def _rename_package_tar(self, package_name, package_filename):
         current_dir = os.getcwd()
@@ -184,7 +184,6 @@ class SnapshotManager:
             if self.packages_required[package][EXTRACT_KEY]:
                 self._extract_package(downloaded_pkg)
             self._rename_package_tar(package, downloaded_pkg)
-
 
         #TODO In the future we may want this to be more general
         image_tag_suffix = self._get_most_recent_cbmc_image()
