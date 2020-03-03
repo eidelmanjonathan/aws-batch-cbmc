@@ -6,7 +6,6 @@ from new_tools.aws_managers.CodebuildManager import CodebuildManager
 from new_tools.aws_managers.key_constants import PIPELINES_KEY, PARAMETER_KEYS_KEY, TEMPLATE_NAME_KEY
 from new_tools.aws_managers.ParameterManager import ParameterManager
 from new_tools.aws_managers.PipelineManager import PipelineManager
-from new_tools.aws_managers.TemplatePackageManager import TemplatePackageManager
 from new_tools.aws_managers.CloudformationStacks import CloudformationStacks
 from new_tools.image_managers.SnapshotManager import SnapshotManager
 from new_tools.utilities.utilities import parse_json_file, str2bool, print_parameters
@@ -66,10 +65,6 @@ class AwsAccount:
                                                   shared_tools_bucket=self.shared_tool_bucket_name,
                                                   project_parameters=self.parameters)
         self.pipeline_manager = PipelineManager(self.session)
-        self.template_package_manager = TemplatePackageManager(self.session,
-                                                               self.parameter_manager,
-                                                               self.shared_tool_bucket_name, snapshot_id=self.snapshot_id,
-                                                               s3_snapshot_prefix=self.snapshot_s3_prefix)
 
     def get_current_snapshot_id(self):
         if self.snapshot_id:
@@ -80,11 +75,11 @@ class AwsAccount:
     def set_env_var(self, obj, a, b, bool_val):
         if not isinstance(bool_val, bool):
             raise Exception("Trying to set an env variable to illegal value")
-        obj.set_env_var(a, b, bool_val)
+        obj.set_env_var(a, b, str(bool_val))
         print(obj.get_env_var(a, b))
 
     def set_ci_operating(self, is_ci_operating):
-        self.set_env_var(self.lambda_manager, 'webhook', 'ci_operational', str(is_ci_operating))
+        self.set_env_var(self.lambda_manager, 'webhook', 'ci_operational', is_ci_operating)
 
     def set_update_github(self, github_update):
         self.set_env_var(self.lambda_manager, 'batchstatus', 'ci_updating_status', github_update)
@@ -93,14 +88,12 @@ class AwsAccount:
     def download_and_set_snapshot(self, snapshot_id):
         self.snapshot_id = snapshot_id
         self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id)
-        self.parameter_manager = ParameterManager(self.profile, self.stacks,
+        self.parameter_manager = ParameterManager(self.session, self.stacks,
                                                   snapshot=self.snapshot,
                                                   snapshot_id=self.snapshot_id,
                                                   project_parameters=self.parameters,
                                                   shared_tools_bucket=self.shared_tool_bucket_name)
-        self.template_package_manager = TemplatePackageManager(self.profile,
-                                                               self.parameter_manager,
-                                                               self.shared_tool_bucket_name, snapshot_id=self.snapshot_id, s3_snapshot_prefix=self.snapshot_s3_prefix)
+
 
 
     def _create_stack(self, stack_name, parameters, template_body=None, template_url=None):
@@ -167,13 +160,13 @@ class AwsAccount:
         """
         if s3_template_source:
             template_body = None
-            template_url = self.template_package_manager\
-                .get_s3_url_for_template(template_name, parameter_overrides)
+            template_url = self.get_s3_url_for_template(template_name, parameter_overrides)
             print("Using S3 template at url: {}".format(template_url))
 
         else:
             template_url = None
             template_body = open(template_name).read()
+        print("RIGHT BEFORE: {}".format(self.parameter_manager.snapshot_id))
         parameters = self.parameter_manager.make_stack_parameters(parameter_keys, parameter_overrides)
         try:
             self._create_or_update_stack(stack_name, parameters, template_name, template_body=template_body,
@@ -239,3 +232,14 @@ class AwsAccount:
     def trigger_and_wait_for_pipelines(self, pipelines):
         self._trigger_pipelines(pipelines)
         self._wait_for_pipelines(pipelines)
+
+    def get_s3_url_for_template(self, template_name, parameter_overrides=None):
+        snapshot_id = self.snapshot_id if self.snapshot_id else self.parameter_manager.get_value('SnapshotID', parameter_overrides=parameter_overrides)
+
+        if not snapshot_id:
+            raise Exception("Cannot fetch account templates from S3 with no snapshot ID")
+        return ("https://s3.amazonaws.com/{}/{}snapshot-{}/{}"
+                .format(self.shared_tool_bucket_name, self.snapshot_s3_prefix,
+                        snapshot_id,
+                        template_name))
+

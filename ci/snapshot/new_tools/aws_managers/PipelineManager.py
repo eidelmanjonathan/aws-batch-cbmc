@@ -13,6 +13,7 @@ class PipelineManager:
         self.session = session
         self.pipeline_client = self.session.client("codepipeline")
         self.logger = logging.getLogger('PipelineManager')
+        self.logger.setLevel(logging.INFO)
         self.sleep_interval = sleep_interval if sleep_interval else DEFAULT_SLEEP_INTERVAL
 
     ### PRIVATE

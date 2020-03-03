@@ -105,7 +105,8 @@ class SnapshotManager:
         if not package_filename:
             package_filename = self._get_filename_of_package_in_s3(package)
         local_filename = os.path.join(self.local_snapshot_dir, package_filename)
-        key = "{}/{}/{}".format(S3_PACKAGE_KEY_PREFIX, package, package_filename)
+        key = "{}{}/{}".format(S3_PACKAGE_KEY_PREFIX, package, package_filename)
+        print("KEY {}".format(key))
         self.s3.download_file(Bucket=self.bucket_name, Key=key, Filename=local_filename)
         return package_filename
 
@@ -126,6 +127,7 @@ class SnapshotManager:
         # Flatten directory structure
         for file in os.listdir(prefix):
             shutil.move(os.path.join(prefix, file), file)
+        os.rmdir(prefix)
         os.chdir(current_dir)
 
     def upload_template_package(self):

@@ -28,6 +28,7 @@ class ParameterManager:
         self.snapshot = snapshot
         self.snapshot_id = snapshot_id
         self.logger = logging.getLogger('ParameterManager')
+        self.logger.setLevel(logging.INFO)
 
         # We can store project specific parameters for several projects in a single JSON
         # we only want to use project parameters that are for this specific project ID
@@ -35,6 +36,7 @@ class ParameterManager:
             if project_parameters else None
         self.shared_tool_bucket_name = shared_tools_bucket
         self.bucket_policy_manager = BucketPolicyManager(self.session, self.shared_tool_bucket_name)
+
 
     def _get_secret_val(self, key):
         try:
@@ -66,10 +68,10 @@ class ParameterManager:
         if key in parameter_overrides:
             return parameter_overrides.get(key)
 
-        if key in self.snapshot:
+        if self.snapshot and key in self.snapshot:
             return self.snapshot.get(key)
 
-        if key in self.project_parameters:
+        if self.project_parameters and key in self.project_parameters:
             return self.project_parameters.get(key)
 
         stack_output = self.stacks.get_output(key)
@@ -110,7 +112,6 @@ class ParameterManager:
             else parameter_overrides["SnapshotID"]
         parameter_overrides["S3BucketToolsName"] = self.shared_tool_bucket_name \
             if "S3BucketToolsName" not in parameter_overrides else parameter_overrides["S3BucketToolsName"]
-
         parameter_overrides = self._generate_overrides_with_bucket_policy(parameter_overrides, keys)
         parameters = []
 

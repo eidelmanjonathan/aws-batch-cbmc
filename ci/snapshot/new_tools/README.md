@@ -93,13 +93,12 @@ In order to deploy a proof account, we will need a project parameters file for t
 This will look something like this:
 
     {
-        "parameters": {
-            "ProjectName": "MQTT-Beta2",
-            "NotificationAddress": "notification@email.com",
-            "SIMAddress": "notification@email.com",
-            "GitHubRepository": "eidelmanjonathan/amazon-freertos",
-            "GitHubBranchName": "master"
-        }
+        "ProjectName": "MQTT-Beta2",
+        "NotificationAddress": "notification@email.com",
+        "SIMAddress": "notification@email.com",
+        "GitHubRepository": "eidelmanjonathan/amazon-freertos",
+        "GitHubBranchName": "master"
+        
     }
 
  This gives the specific parameters we want for our proof account.

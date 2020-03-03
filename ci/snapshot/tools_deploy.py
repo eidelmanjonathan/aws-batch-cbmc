@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import logging
 
@@ -53,6 +54,8 @@ if __name__ == '__main__':
     args = parse_args()
     account_orchestrator = AccountOrchestrator(build_tools_account_profile=args.build_profile,
                                                tools_account_parameters_file=args.tools_parameters)
+    if args.generate_snapshot and args.snapshot_id:
+        raise Exception("Cannot generate a snapshot if user provides a snapshot ID")
     if args.bootstrap_from_local_templates:
         account_orchestrator.deploy_globals_stack(deploy_from_local_template=True)
         account_orchestrator.deploy_build_tools(deploy_from_local_template=True)

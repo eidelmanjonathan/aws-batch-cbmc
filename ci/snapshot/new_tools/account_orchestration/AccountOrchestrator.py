@@ -4,11 +4,14 @@ from new_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_D
     PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA, BUILD_TOOLS_BUCKET_POLICY, PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA, \
     BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS
 from new_tools.account_orchestration.AwsAccount import AwsAccount
-from new_tools.aws_managers.TemplatePackageManager import BUILD_TOOLS_IMAGE_S3_SOURCE, PROOF_ACCOUNT_IMAGE_S3_SOURCE
-from new_tools.aws_managers.key_constants import BUILD_TOOLS_IMAGE_ID_KEY, \
-    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY
+from new_tools.aws_managers.key_constants import BUILD_TOOLS_SNAPSHOT_ID_KEY, \
+    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, SNAPSHOT_ID_OVERRIDE_KEY
 from new_tools.image_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 
+
+BUILD_TOOLS_IMAGE_S3_SOURCE = "BUILD_TOOLS_IMAGE_S3_SOURCE"
+PROOF_ACCOUNT_IMAGE_S3_SOURCE = "PROOF_ACCOUNT_IMAGE_S3_SOURCE"
+BOOTSTRAP_CONST = "BOOTSTRAP"
 
 class AccountOrchestrator:
     """
@@ -21,7 +24,6 @@ class AccountOrchestrator:
                  tools_account_parameters_file=None,
                  proof_account_parameters_file=None):
         """
-
         :param build_tools_account_profile: string - name of your aws tools profile from your aws config file
         :param proof_account_profile: string - name of your aws proof profile from your aws config file
         :param tools_account_parameters_file: string - filename of a json file giving parameters for the tool account
@@ -34,7 +36,7 @@ class AccountOrchestrator:
                                       snapshot_s3_prefix=TOOLS_SNAPSHOT_PREFIX)
 
         if proof_account_profile:
-            self.proof_account_write_access_snapshot = SnapshotManager(build_tools_account_profile,
+            self.proof_account_write_access_snapshot = SnapshotManager(self.build_tools.session,
                                                                        bucket_name=self.build_tools.shared_tool_bucket_name,
                                                                        packages_required=PROOF_ACCOUNT_PACKAGES,
                                                                        tool_image_s3_prefix=PROOF_SNAPSHOT_PREFIX)
@@ -60,8 +62,10 @@ class AccountOrchestrator:
         # If we are deploying a particular image
         s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
         param_overrides = {
-            BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id
+            BUILD_TOOLS_SNAPSHOT_ID_KEY: self.build_tools.snapshot_id,
         }
+        if deploy_from_local_template:
+            param_overrides[SNAPSHOT_ID_OVERRIDE_KEY] = BOOTSTRAP_CONST
         self.build_tools.deploy_stacks(GLOBALS_CLOUDFORMATION_DATA,
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
@@ -69,8 +73,10 @@ class AccountOrchestrator:
     def deploy_build_tools(self, deploy_from_local_template=False):
         s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
         param_overrides = {
-            BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id
+            BUILD_TOOLS_SNAPSHOT_ID_KEY: self.build_tools.snapshot_id
         }
+        if deploy_from_local_template:
+            param_overrides[SNAPSHOT_ID_OVERRIDE_KEY] = BOOTSTRAP_CONST
         self.build_tools.deploy_stacks(BUILD_TOOLS_CLOUDFORMATION_DATA,
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
@@ -78,8 +84,10 @@ class AccountOrchestrator:
     def deploy_build_alarms(self, deploy_from_local_template=False):
         s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE if not deploy_from_local_template else None
         param_overrides = {
-            BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id
+            BUILD_TOOLS_SNAPSHOT_ID_KEY: self.build_tools.snapshot_id,
         }
+        if deploy_from_local_template:
+            param_overrides[SNAPSHOT_ID_OVERRIDE_KEY] = BOOTSTRAP_CONST
         self.build_tools.deploy_stacks(BUILD_TOOLS_ALARMS,
                                        s3_template_source=s3_template_source,
                                        overrides=param_overrides)
@@ -87,7 +95,7 @@ class AccountOrchestrator:
     def add_proof_account_to_shared_bucket_policy(self):
         s3_template_source = BUILD_TOOLS_IMAGE_S3_SOURCE
         param_overrides = {
-            BUILD_TOOLS_IMAGE_ID_KEY: self.build_tools.snapshot_id,
+            BUILD_TOOLS_SNAPSHOT_ID_KEY: self.build_tools.snapshot_id,
             PROOF_ACCOUNT_ID_TO_ADD_KEY: self.proof_account.account_id
         }
         self.build_tools.deploy_stacks(BUILD_TOOLS_BUCKET_POLICY,

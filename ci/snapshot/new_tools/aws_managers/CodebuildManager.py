@@ -43,7 +43,7 @@ class CodebuildManager:
         return name
 
     def _get_full_variable_name(self, items, name, name_key='name'):
-        return find_string_match_ignore_case([item[name_key] for item in items], name, enforce_unique=True)
+        return find_string_match_ignore_case(name, [item[name_key] for item in items], enforce_unique=True)
 
     def _get_value(self, items, name, name_key='name', value_key='value'):
         vrs = [item for item in items if name == item[name_key]]
@@ -57,10 +57,11 @@ class CodebuildManager:
         return item
 
     def _generate_map_with_new_value(self, items, name, value, name_key='name', value_key='value'):
-        if name_key not in items:
-            raise Exception("Can't find {} in {}".format(name, [item[name_key] for item in items]))
-        if items.count(name_key) > 1:
-            raise Exception("Found a duplicate entry of {} in {}".format(name, [item[name_key] for item in items]))
+        keys = [item[name_key] for item in items]
+        if name not in keys:
+            raise Exception("Can't find {} in {}".format(name, keys))
+        if keys.count(name) > 1:
+            raise Exception("Found a duplicate entry of {} in {}".format(name, keys))
         return list(map(lambda item :
                         self._generate_new_value_item(item, value_key, value) if item[name_key] == name else item, items))
 
@@ -77,7 +78,7 @@ class CodebuildManager:
             raise Exception("No single project named {}: Found matches {}"
                   .format(project, [proj['name'] for proj in projects]))
         #TODO: Why would there every be things that aren't codebuild keys?
-        update = dict(filter(lambda item: item.key in self.CODEBUILD_KEYS, projects[0].items()))
+        update = dict(filter(lambda item: item[0] in self.CODEBUILD_KEYS, projects[0].items()))
         update['environment']['environmentVariables'] = variables
         self.codebuild_client.update_project(**update)
 

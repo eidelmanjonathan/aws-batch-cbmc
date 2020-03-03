@@ -58,9 +58,10 @@ class LambdaManager:
 
     def set_variables(self, function, variables):
         cfg = self.lambda_client.get_function_configuration(FunctionName=function)
-        cfg = dict(filter(lambda item: item.key in self.LAMBDA_KEYS, cfg))
+
+        cfg = dict(filter(lambda item: item[0] in self.LAMBDA_KEYS, cfg.items()))
         if cfg.get('VpcConfig'):
-            cfg['VpcConfig'] = dict(filter(lambda item: item.key in self.LAMBDA_VPCCONFIG_KEYS, cfg['VpcConfig']))
+            cfg['VpcConfig'] = dict(filter(lambda item: item[0] in self.LAMBDA_VPCCONFIG_KEYS, cfg['VpcConfig'].items()))
         cfg['Environment']['Variables'] = variables
         self.lambda_client.update_function_configuration(**cfg)
 
