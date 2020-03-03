@@ -50,11 +50,13 @@ class SnapshotManager:
         self.tool_snapshot_s3_prefix = tool_image_s3_prefix
         self.all_packages = None
 
+    ### Private methods
+
     @staticmethod
     def generate_snapshot_id():
         return time.strftime("%Y%m%d-%H%M%S", time.gmtime())
 
-    def create_local_snapshot_directory(self, snapshot_id):
+    def _create_local_snapshot_directory(self, snapshot_id):
         snapshot_dir = os.path.join(self.base_snapshot_directory, "{}-{}".format(SNAPSHOT_CONST, snapshot_id))
         os.mkdir(snapshot_dir)
         return snapshot_dir
@@ -69,7 +71,7 @@ class SnapshotManager:
         most_recent_key = SnapshotManager._take_most_recent(matching_objs)[KEY_CONST]
         return most_recent_key.replace(key_prefix, "")
 
-    def get_all_packages(self):
+    def _get_all_packages(self):
         if self.all_packages:
             return self.all_packages
         self.all_packages = []
@@ -89,10 +91,10 @@ class SnapshotManager:
         package: name of package build folder in S3 (eg cbmc)
 
         """
-        object_contents = self.get_all_packages()
+        object_contents = self._get_all_packages()
         return self._extract_package_name_from_key("{}{}/".format(S3_PACKAGE_KEY_PREFIX, package), object_contents)
 
-    def download_package_tar(self, package, package_filename=None):
+    def _download_package_tar(self, package, package_filename=None):
         """
         Downloads the tarball of a particular package from S3
         :param package: the name of the package directory in S3 that we are downloading
@@ -106,11 +108,10 @@ class SnapshotManager:
             package_filename = self._get_filename_of_package_in_s3(package)
         local_filename = os.path.join(self.local_snapshot_dir, package_filename)
         key = "{}{}/{}".format(S3_PACKAGE_KEY_PREFIX, package, package_filename)
-        print("KEY {}".format(key))
         self.s3.download_file(Bucket=self.bucket_name, Key=key, Filename=local_filename)
         return package_filename
 
-    def extract_package(self, package_filename):
+    def _extract_package(self, package_filename):
         """
         Some packages need to be extracted before being put in the snapshot. This method goes into the
         snapshot local directory,
@@ -130,23 +131,23 @@ class SnapshotManager:
         os.rmdir(prefix)
         os.chdir(current_dir)
 
-    def upload_template_package(self):
+    def _upload_template_package(self):
         local_snapshot_files = os.listdir(self.local_snapshot_dir)
         for f in local_snapshot_files:
             key = self.tool_snapshot_s3_prefix + "{}-{}/{}".format(SNAPSHOT_CONST ,self.snapshot_id, f)
             self.s3.upload_file(Bucket=self.bucket_name, Filename=os.path.join(self.local_snapshot_dir, "{}".format(f)),
                                   Key=key)
 
-    def generate_snapshot_file(self, package_filenames):
+    def _generate_snapshot_file(self, package_filenames):
         image_file = os.path.join(self.local_snapshot_dir, "{}-{}.json".format(SNAPSHOT_CONST, self.snapshot_id))
         with open(image_file, "w") as f:
             f.write(json.dumps(package_filenames))
 
-    def get_most_recent_cbmc_image(self):
+    def _get_most_recent_cbmc_image(self):
         return remove_substring(self.ecr.list_images(repositoryName=CBMC_REPO_NAME)[IMAGE_IDS_KEY][0][IMAGE_TAG_KEY],
                                 UBUNTU_IMAGE_PREFIX)
 
-    def rename_package_tar(self, package_name, package_filename):
+    def _rename_package_tar(self, package_name, package_filename):
         current_dir = os.getcwd()
         os.chdir(self.local_snapshot_dir)
         #FIXME: these archived files should have predictable names
@@ -160,31 +161,45 @@ class SnapshotManager:
             os.rename(package_filename, "{}.tar.gz".format(package_name))
         os.chdir((current_dir))
 
+    ### Public methods
+
     def generate_new_snapshot_from_latest(self, overrides=None):
+        """
+        Generates a new snapshot and assigns it an ID. By default it will take the most recent
+        build of each tool, but this can be overriden by providing an overrides dictionary that will
+        give a specific package tarball
+        :param overrides: dictionary - package names to particular package tar filename in S3 that we should use
+        :return: string - generated snapshot id
+        """
         self.snapshot_id = self.generate_snapshot_id()
-        self.local_snapshot_dir = self.create_local_snapshot_directory(self.snapshot_id)
+        self.local_snapshot_dir = self._create_local_snapshot_directory(self.snapshot_id)
         package_filenames = {}
         for package in self.packages_required.keys():
             if overrides and package in overrides:
-                downloaded_pkg = self.download_package_tar(package, package_filename=overrides[package])
+                downloaded_pkg = self._download_package_tar(package, package_filename=overrides[package])
             else:
-                downloaded_pkg = self.download_package_tar(package)
+                downloaded_pkg = self._download_package_tar(package)
             package_filenames[package] = downloaded_pkg
 
             if self.packages_required[package][EXTRACT_KEY]:
-                self.extract_package(downloaded_pkg)
-            self.rename_package_tar(package, downloaded_pkg)
+                self._extract_package(downloaded_pkg)
+            self._rename_package_tar(package, downloaded_pkg)
 
 
         #TODO In the future we may want this to be more general
-        image_tag_suffix = self.get_most_recent_cbmc_image()
+        image_tag_suffix = self._get_most_recent_cbmc_image()
         package_filenames["ImageTagSuffix"] = "-{}".format(image_tag_suffix)
 
-        self.generate_snapshot_file(package_filenames)
-        self.upload_template_package()
+        self._generate_snapshot_file(package_filenames)
+        self._upload_template_package()
         return self.snapshot_id
 
     def download_snapshot(self, snapshot_id):
+        """
+        Downloads a snapshot description JSON from S3 and returns it as a dictionary
+        :param snapshot_id: string - snapshot ID that we should download
+        :return: dictionary containing all snapshot details
+        """
         key = self.tool_snapshot_s3_prefix + "{}-{}/{}-{}.json" .format(SNAPSHOT_CONST, snapshot_id,
                                                                         SNAPSHOT_CONST, snapshot_id)
         self.s3.download_file(Bucket=self.bucket_name,

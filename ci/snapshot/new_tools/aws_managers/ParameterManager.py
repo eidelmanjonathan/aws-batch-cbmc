@@ -37,6 +37,7 @@ class ParameterManager:
         self.shared_tool_bucket_name = shared_tools_bucket
         self.bucket_policy_manager = BucketPolicyManager(self.session, self.shared_tool_bucket_name)
 
+    ### Private methods
 
     def _get_secret_val(self, key):
         try:
@@ -45,6 +46,24 @@ class ParameterManager:
                 return secret_val[1]
         except Exception:
             self.logger.debug("No such secret {}".format(key))
+
+    def _generate_overrides_with_bucket_policy(self, overrides, keys):
+        """
+        When building a bucket policy stack we need to list every single account that will get access to the bucket.
+        This is a bad user experience so here we allow the user the give only the account ID they want to add, then we
+        go and find what accounts are already allowed and return the parameters with the value that will add
+        only the new account
+        :param overrides:
+        :param keys:
+        :return: new overrides with proof account ids set to what is required to create the bucket policy
+        """
+        new_overrides = copy.deepcopy(overrides)
+        if "ProofAccountIds" in keys and "ProofAccountIds" not in new_overrides:
+            new_overrides["ProofAccountIds"] = self.bucket_policy_manager\
+                .build_bucket_policy_arns_list(overrides.get("ProofAccountIdToAdd"))
+        return new_overrides
+
+    ### Public methods
 
     def get_value(self, key, parameter_overrides=None):
         """
@@ -82,22 +101,6 @@ class ParameterManager:
             return secret_val
         self.logger.info("Did not find value for key {}. Using template default.".format(key))
         return None
-
-    def _generate_overrides_with_bucket_policy(self, overrides, keys):
-        """
-        When building a bucket policy stack we need to list every single account that will get access to the bucket.
-        This is a bad user experience so here we allow the user the give only the account ID they want to add, then we
-        go and find what accounts are already allowed and return the parameters with the value that will add
-        only the new account
-        :param overrides:
-        :param keys:
-        :return: new overrides with proof account ids set to what is required to create the bucket policy
-        """
-        new_overrides = copy.deepcopy(overrides)
-        if "ProofAccountIds" in keys and "ProofAccountIds" not in new_overrides:
-            new_overrides["ProofAccountIds"] = self.bucket_policy_manager\
-                .build_bucket_policy_arns_list(overrides.get("ProofAccountIdToAdd"))
-        return new_overrides
 
     def make_stack_parameters(self, keys, parameter_overrides):
         """

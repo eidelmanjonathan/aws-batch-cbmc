@@ -1,4 +1,5 @@
 import json
+import logging
 
 import boto3
 
@@ -17,15 +18,16 @@ class BucketPolicyManager:
         self.session = session
         self.shared_tool_bucket_name = shared_tool_bucket_name
         self.s3 = self.session.client("s3")
+        self.logger = logging.getLogger("BucketPolicyManager")
+        self.logger.setLevel(logging.INFO)
 
-    @staticmethod
-    def _verify_missing_policy_exception(e):
+    def _verify_missing_policy_exception(self, e):
         """
         If we have a missing bucket policy, do nothing, for any other exception, raise it
         :param e: an exception
         """
         if str(e) == MISSING_BUCKET_POLICY_MESSAGE:
-            print("Could not find an existing bucket policy. Creating a new one")
+            self.logger.info("Could not find an existing bucket policy. Creating a new one")
             return
         else:
             raise e

@@ -36,7 +36,7 @@ class LambdaManager:
         self.session = session
         self.lambda_client = self.session.client("lambda")
 
-    def get_function_name(self, function):
+    def _get_function_name(self, function):
         """Return function name containing 'function' (case insensitive)"""
         names = [fnc['FunctionName'] for fnc in self.lambda_client.list_functions()['Functions']]
         name = find_string_match_ignore_case(function, names)
@@ -44,11 +44,11 @@ class LambdaManager:
             raise Exception("No single function with name {} in {}".format(function, names))
         return name
 
-    def get_variables(self, lambda_name):
+    def _get_variables(self, lambda_name):
         cfg = self.lambda_client.get_function_configuration(FunctionName=lambda_name)
         return cfg['Environment']['Variables']
 
-    def get_variable_name(self, variables, var):
+    def _get_variable_name(self, variables, var):
         """Return variable name containing 'var' (case insensitive)"""
         names = list(variables.keys())
         name = find_string_match_ignore_case(var, names)
@@ -56,7 +56,7 @@ class LambdaManager:
             raise Exception("No single variable with name {} in {}".format(var, names))
         return name
 
-    def set_variables(self, function, variables):
+    def _set_variables(self, function, variables):
         cfg = self.lambda_client.get_function_configuration(FunctionName=function)
 
         cfg = dict(filter(lambda item: item[0] in self.LAMBDA_KEYS, cfg.items()))
@@ -72,9 +72,9 @@ class LambdaManager:
         :param var_name: environment variable name
         :return: variable name value pair
         """
-        lambda_name = self.get_function_name(fn_name)
-        variables = self.get_variables(lambda_name)
-        var_lambda_key = self.get_variable_name(variables, var_name)
+        lambda_name = self._get_function_name(fn_name)
+        variables = self._get_variables(lambda_name)
+        var_lambda_key = self._get_variable_name(variables, var_name)
         return (var_name, variables[var_lambda_key])
 
     def set_env_var(self, fn_name, name, value):
@@ -84,9 +84,9 @@ class LambdaManager:
         :param var_name: environment variable name
         :return: variable name value pair
         """
-        lambda_name = self.get_function_name(fn_name)
-        variables = self.get_variables(lambda_name)
-        var_name = self.get_variable_name(variables, name)
+        lambda_name = self._get_function_name(fn_name)
+        variables = self._get_variables(lambda_name)
+        var_name = self._get_variable_name(variables, name)
         variables[var_name] = value
-        self.set_variables(lambda_name, variables)
+        self._set_variables(lambda_name, variables)
 

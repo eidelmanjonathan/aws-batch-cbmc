@@ -35,6 +35,7 @@ class CodebuildManager:
         self.session = session
         self.codebuild_client = self.session.client("codebuild")
 
+    ### Private methods
     def _get_full_project_name(self, project_name):
         names = self.codebuild_client.list_projects()['projects']
         name = find_string_match_ignore_case(project_name, names)
@@ -82,6 +83,7 @@ class CodebuildManager:
         update['environment']['environmentVariables'] = variables
         self.codebuild_client.update_project(**update)
 
+    ### Public methods
     def get_env_var(self, project_name, var_name):
         """
         Get a codebuild environment variable
