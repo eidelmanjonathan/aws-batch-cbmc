@@ -1,4 +1,4 @@
-from new_tools.aws_managers.key_constants import TEMPLATE_NAME_KEY, PARAMETER_KEYS_KEY, PIPELINES_KEY
+from deployment_tools.aws_managers.key_constants import TEMPLATE_NAME_KEY, PARAMETER_KEYS_KEY, PIPELINES_KEY
 
 BUILD_TOOLS_ALARMS = {
     'alarms-build': {

@@ -6,7 +6,7 @@ import time
 
 import boto3
 
-from new_tools.utilities.utilities import remove_substring
+from deployment_tools.utilities.utilities import remove_substring
 
 PROOF_SNAPSHOT_PREFIX = "snapshot/"
 S3_PACKAGE_KEY_PREFIX = "package/"

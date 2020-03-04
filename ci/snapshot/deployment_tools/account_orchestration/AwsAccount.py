@@ -3,14 +3,14 @@ import logging
 import boto3
 import botocore
 
-from new_tools.aws_managers.LambdaManager import LambdaManager
-from new_tools.aws_managers.CodebuildManager import CodebuildManager
-from new_tools.aws_managers.key_constants import PIPELINES_KEY, PARAMETER_KEYS_KEY, TEMPLATE_NAME_KEY
-from new_tools.aws_managers.ParameterManager import ParameterManager
-from new_tools.aws_managers.PipelineManager import PipelineManager
-from new_tools.aws_managers.CloudformationStacks import CloudformationStacks
-from new_tools.snapshot_managers.SnapshotManager import SnapshotManager
-from new_tools.utilities.utilities import parse_json_file, str2bool, print_parameters
+from deployment_tools.aws_managers.LambdaManager import LambdaManager
+from deployment_tools.aws_managers.CodebuildManager import CodebuildManager
+from deployment_tools.aws_managers.key_constants import PIPELINES_KEY, PARAMETER_KEYS_KEY, TEMPLATE_NAME_KEY
+from deployment_tools.aws_managers.ParameterManager import ParameterManager
+from deployment_tools.aws_managers.PipelineManager import PipelineManager
+from deployment_tools.aws_managers.CloudformationStacks import CloudformationStacks
+from deployment_tools.snapshot_managers.SnapshotManager import SnapshotManager
+from deployment_tools.utilities.utilities import parse_json_file, str2bool, print_parameters
 from secretst import Secrets
 
 UNEXPECTED_POLICY_MSG = "Someone has changed the bucket policy on the shared build account. " \

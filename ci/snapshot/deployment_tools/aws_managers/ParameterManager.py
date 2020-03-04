@@ -3,8 +3,8 @@ import logging
 
 import boto3
 
-from new_tools.aws_managers.BucketPolicyManager import BucketPolicyManager
-from new_tools.aws_managers.key_constants import SHARED_BUCKET_PARAM_KEY
+from deployment_tools.aws_managers.BucketPolicyManager import BucketPolicyManager
+from deployment_tools.aws_managers.key_constants import SHARED_BUCKET_PARAM_KEY
 
 from secretst import Secrets
 

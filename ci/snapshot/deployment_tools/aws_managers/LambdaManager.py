@@ -1,7 +1,7 @@
 import boto3
 import botocore_amazon.monkeypatch
 
-from new_tools.utilities.utilities import find_string_match_ignore_case
+from deployment_tools.utilities.utilities import find_string_match_ignore_case
 
 
 class LambdaManager:

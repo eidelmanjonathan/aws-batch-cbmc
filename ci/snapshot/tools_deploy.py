@@ -2,7 +2,7 @@
 import argparse
 import logging
 
-from new_tools.account_orchestration.AccountOrchestrator import AccountOrchestrator
+from deployment_tools.account_orchestration.AccountOrchestrator import AccountOrchestrator
 
 def create_parser():
     arg = argparse.ArgumentParser(description="""

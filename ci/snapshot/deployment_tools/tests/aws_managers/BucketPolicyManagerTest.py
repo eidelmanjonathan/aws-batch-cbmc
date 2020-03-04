@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
-from new_tools.aws_managers.BucketPolicyManager import BucketPolicyManager
+from deployment_tools.aws_managers.BucketPolicyManager import BucketPolicyManager
 
 SHARED_BUCKET_NAME = "TEST_BUCKET"
 session_mock = Mock()

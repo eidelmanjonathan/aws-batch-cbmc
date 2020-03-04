@@ -1,13 +1,13 @@
 import logging
 from functools import reduce
 
-from new_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, BUILD_TOOLS_CLOUDFORMATION_DATA, \
+from deployment_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, BUILD_TOOLS_CLOUDFORMATION_DATA, \
     PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA, BUILD_TOOLS_BUCKET_POLICY, PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA, \
     BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS
-from new_tools.account_orchestration.AwsAccount import AwsAccount
-from new_tools.aws_managers.key_constants import BUILD_TOOLS_SNAPSHOT_ID_KEY, \
+from deployment_tools.account_orchestration.AwsAccount import AwsAccount
+from deployment_tools.aws_managers.key_constants import BUILD_TOOLS_SNAPSHOT_ID_KEY, \
     BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, SNAPSHOT_ID_OVERRIDE_KEY
-from new_tools.snapshot_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
+from deployment_tools.snapshot_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 
 
 BUILD_TOOLS_IMAGE_S3_SOURCE = "BUILD_TOOLS_IMAGE_S3_SOURCE"
