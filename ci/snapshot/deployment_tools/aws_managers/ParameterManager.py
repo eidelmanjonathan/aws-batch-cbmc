@@ -15,6 +15,7 @@ class ParameterManager:
     sources of data we use to populate our stack parameters so the purpose of this class is to simply expose an
     interface to easily get the parameters we need to deploy a stack
     """
+    SNAPSHOT_ID_KEY = "SnapshotID"
     def __init__(self, session, stacks,
                  snapshot=None,
                  snapshot_id=None,

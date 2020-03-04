@@ -57,9 +57,7 @@ class AwsAccount:
                                                 tool_image_s3_prefix=snapshot_s3_prefix)
         self.snapshot_id = snapshot_id
 
-        self.snapshot = None
-        if self.snapshot_id:
-            self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id)
+        self.snapshot = self.snapshot_manager.download_snapshot(self.snapshot_id) if self.snapshot_id else None
 
         self.parameter_manager = ParameterManager(self.session, self.stacks,
                                                   snapshot_id=self.snapshot_id,
@@ -77,7 +75,7 @@ class AwsAccount:
         if self.snapshot_id:
             return self.snapshot_id
         else:
-            return self.parameter_manager.get_value("SnapshotID")
+            return self.parameter_manager.get_value(ParameterManager.SNAPSHOT_ID_KEY)
 
     def set_ci_operating(self, is_ci_operating):
         """
@@ -257,7 +255,7 @@ class AwsAccount:
         self._wait_for_pipelines(pipelines)
 
     def _get_s3_url_for_template(self, template_name, parameter_overrides=None):
-        snapshot_id = self.snapshot_id if self.snapshot_id else self.parameter_manager.get_value('SnapshotID', parameter_overrides=parameter_overrides)
+        snapshot_id = self.snapshot_id if self.snapshot_id else self.parameter_manager.get_value(ParameterManager.SNAPSHOT_ID_KEY, parameter_overrides=parameter_overrides)
 
         if not snapshot_id:
             raise Exception("Cannot fetch account templates from S3 with no snapshot ID")

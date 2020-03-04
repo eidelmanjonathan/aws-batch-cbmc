@@ -49,6 +49,7 @@ class CloudformationStacks():
     ################################################################
 
     def get_status(self, stack=None):
+        #FIXME: SHouldn't return 2 types
         if stack is None:
             return {stk: self.stack[stk]['status'] for stk in self.stack}
         if stack in self.stack:
