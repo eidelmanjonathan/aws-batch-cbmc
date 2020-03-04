@@ -18,6 +18,8 @@ We also have to track and manage project specific information, (like project nam
 These need to be separated from data that can be shared between accounts. The current way we achieve this separation is by having a shared “build tools” account, with an S3 bucket that contains all information about sets of tools and Cloudformation templates. Each of these sets is assigned a “Snapshot ID”.
 So if we want to deploy a project account using those tools and those templates, we can simply deploy that Snapshot ID. 
 Then any project specific parameters that need to be assigned to the project account and provided by the user at the time of deployment.
+These are things like project name, and which email address we should send alerts to. 
+These are provided in a JSON file at the time of deployment.
 
 One of the issues we have now is that the code that handles configuration management is intermixed with the code that handles project build data. 
 We would like to have a well-organized way of managing these AWS accounts, and want to be sure that we are able to control exactly what set of tools is running in each account. 
@@ -38,15 +40,13 @@ You will also need a JSON file with the particular parameters you would like to 
 This JSON looks like this:
 
     {
-    "parameters": {
         "BatchCodeCommitBranchName": "snapshot",
         "BatchRepositoryBranchName": "master",
-        "BatchRepositoryOwner": "awslabs",
         "BatchRepositoryName": "aws-batch-cbmc",
-        "ViewerRepositoryOwner": "markrtuttle",
-        "ViewerRepositoryName": "cbmc",
+        "BatchRepositoryOwner": "awslabs",
         "ViewerRepositoryBranchName": "cbmc-viewer"
-        }
+        "ViewerRepositoryName": "cbmc",
+        "ViewerRepositoryOwner": "markrtuttle"
     }
     
 These parameters will decide the git repos and other properties we will use to set up the account.
@@ -122,6 +122,9 @@ To do this, we create a package overrides json file which looks like this:
 
 The keys we can supply are cbmc, batch, viewer and lambda. 
 The packages are packages in the shared tools S3 bucket packages directory.
+In the shared tools S3 bucket, there is a directory called "packages" that has subdirectories for each tools.
+That folder contains tarballs with names that look similar to the above.
+Any of those tarballs can be chosen here.
 
 If we want to generate a new snapshot with package overrides, we use the following command:
 
@@ -189,20 +192,20 @@ The specification takes the form of a dictionary that looks like this:
     BUILD_TOOLS_CLOUDFORMATION_DATA = {
         "build-batch": {
             TEMPLATE_NAME_KEY: "build-batch.yaml",
-            PARAMETER_KEYS_KEY: ['S3BucketName',
-                                 'GitHubToken',
-                                 'BatchRepositoryOwner',
+            PARAMETER_KEYS_KEY: ['BatchRepositoryBranchName',
                                  'BatchRepositoryName',
-                                 'BatchRepositoryBranchName'],
+                                 'BatchRepositoryOwner',
+                                 'GitHubToken',
+                                 'S3BucketName'],
             PIPELINES_KEY: ["Build-Batch-Pipeline"]
         },
         "build-viewer": {
             TEMPLATE_NAME_KEY: "build-viewer.yaml",
-            PARAMETER_KEYS_KEY: ['S3BucketName',
-                                 'GitHubToken',
-                                 'ViewerRepositoryOwner',
-                                 'ViewerRepositoryName',
-                                 'ViewerRepositoryBranchName'],
+            PARAMETER_KEYS_KEY: ['GitHubToken', 
+                                 'S3BucketName', 
+                                 'ViewerRepositoryBranchName', 
+                                 'ViewerRepositoryName', 
+                                 'ViewerRepositoryOwner'],
             PIPELINES_KEY: ["Build-Viewer-Pipeline"]
         }
     }

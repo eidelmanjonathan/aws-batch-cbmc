@@ -66,6 +66,7 @@ class AwsAccount:
                                                   snapshot=self.snapshot,
                                                   shared_tools_bucket=self.shared_tool_bucket_name,
                                                   project_parameters=self.parameters)
+
         self.pipeline_manager = PipelineManager(self.session)
 
     def get_current_snapshot_id(self):
@@ -147,12 +148,12 @@ class AwsAccount:
         PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA = {
         "github": {
                 TEMPLATE_NAME_KEY: "github.yaml",
-                PARAMETER_KEYS_KEY: ['S3BucketToolsName',
-                                     'BuildToolsAccountId',
-                                     'ProjectName',
-                                     'SnapshotID',
+                PARAMETER_KEYS_KEY: ['BuildToolsAccountId',
+                                     'GitHubBranchName',
                                      'GitHubRepository',
-                                     'GitHubBranchName']
+                                     'ProjectName',
+                                     'S3BucketToolsName',
+                                     'SnapshotID']
             }
         }
         This will deploy the github stack. The method will try to find each parameter from the following

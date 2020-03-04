@@ -40,6 +40,7 @@ class BucketPolicyManager:
         """
         try:
             result = self.s3.get_bucket_policy(Bucket=self.shared_tool_bucket_name)
+
         # FIXME: I couldn't seem to import the specific exception here
         except Exception as e:
             # If the exception is that there is no bucket policy, we can safely create one

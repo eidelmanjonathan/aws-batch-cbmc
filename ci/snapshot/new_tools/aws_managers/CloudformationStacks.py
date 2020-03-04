@@ -13,6 +13,9 @@ class CloudformationStacks():
         substantially but it is out of scope for now
     """
     def __init__(self, session):
+        """
+        :param session: boto3 session
+        """
         self.session = session
         self.client = self.session.client("cloudformation")
         self.description = None
@@ -23,13 +26,13 @@ class CloudformationStacks():
 
     def update(self):
         self.description = self.client.describe_stacks()
-
+        #FIXME Why nested functions
         def parse_parameters(params):
             return {param['ParameterKey']: param['ParameterValue'] for param in params}
 
         def parse_outputs(outs):
-            return {out.get('ExportName') or out.get('OutputKey'): out['OutputValue']
-                    for out in outs}
+            # TODO: inline this
+            return {out.get('ExportName') or out.get('OutputKey'): out['OutputValue'] for out in outs}
 
         def parse_stacks(stks):
             return {stk['StackName']:
@@ -53,6 +56,8 @@ class CloudformationStacks():
         return None
 
     def get_status_reason(self, stack=None):
+        #FIXME: Duplicate code
+        #FIXME: Shouldn't return 2 types
         if stack is None:
             return {stk: self.stack[stk]['statusreason'] for stk in self.stack}
         if stack in self.stack:
@@ -78,11 +83,13 @@ class CloudformationStacks():
         return self.client
 
     def get_statuses(self, stacks=None):
+        #TODO What is stacks
         if stacks is None:
             stacks = self.stack.keys()
         return {stack: self.get_status(stack) for stack in stacks}
 
     def get_status_reasons(self, stacks=None):
+        #TODO What is stacks
         if stacks is None:
             stacks = self.stack.keys()
         return {stack: self.get_status_reason(stack) for stack in stacks}
