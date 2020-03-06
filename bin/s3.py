@@ -269,7 +269,11 @@ def copy_file_to_object(filename, path, client=None, region=None):
     key = key_name(path)
 
     try:
-        client.upload_file(filename, bucket, key)
+        client.upload_file(filename, bucket, key, ExtraArgs={
+            "Metadata": {
+                "x-amz-meta-cbmc": "True"
+            }
+        })
     except ClientError as exc:
         abort("Error copying file to object: {}, {}".format(filename, path),
               "", data=exc)
@@ -511,7 +515,7 @@ def wait_for_object_condition(path, condition, client=None, region=None,
 
 # boto3 api omits a sync which is just too useful not to use
 
-def sync_directory_to_bucket(directory, bucket, quiet=False, delete=False):
+def sync_directory_to_bucket(directory, bucket, quiet=False, delete=False, metadata=None):
     """Synchronize a directory to a path (a bucket or bucket and prefix)."""
 
     if not os.path.isdir(directory):
@@ -527,8 +531,16 @@ def sync_directory_to_bucket(directory, bucket, quiet=False, delete=False):
             cmd.append('--delete')
         if quiet:
             cmd.append('--quiet')
+        if metadata:
+            cmd.append('--metadata')
+            param_str = ""
+            for k in metadata.keys():
+                param_str += '{}={},'.format(k, metadata[k])
+            param_str = param_str[:len(param_str) - 1]
+            cmd.append(param_str)
         if not quiet:
             print("Copying directory {} to bucket {}".format(directory, url))
+            print("Running copy command: {}".format(cmd))
         sys.stdout.flush()
         subprocess.check_call(cmd)
     except Exception as exc:

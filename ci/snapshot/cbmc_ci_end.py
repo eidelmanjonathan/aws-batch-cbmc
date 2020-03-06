@@ -40,6 +40,8 @@ class Job_name_info:
     def is_cbmc_property_job(self):
         return self.is_cbmc_batch_job and self.type == "property"
 
+    def is_cbmc_report_job(self):
+        return self.is_cbmc_batch_job and self.type == "report"
 
     @staticmethod
     def check_job_name(job_name):
@@ -147,6 +149,12 @@ def lambda_handler(event, context):
                         response['status'] = clog_writert.FAILED
                 else:
                     response['status'] = clog_writert.FAILED
+            elif job_name_info.is_cbmc_report_job():
+                print("type: {}, is_cbmc_report_job: {}, job name: {}".format(job_name_info.type,
+                                                                                job_name_info.is_cbmc_report_job(),
+                                                                                job_name))
+                update_status("success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
+                response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
             else:
                 response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
 

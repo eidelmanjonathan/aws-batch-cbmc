@@ -1,3 +1,5 @@
+CLOUDFRONT_URL_KEY = "CloudfrontUrl"
+S3_BUCKET_PROOFS_OVERRIDE_KEY = "S3BucketProofs"
 TEMPLATE_NAME_KEY = "template_name"
 PARAMETER_KEYS_KEY = "parameter_keys"
 PARAMETER_OVERRIDES_KEY = "parameter_overrides"

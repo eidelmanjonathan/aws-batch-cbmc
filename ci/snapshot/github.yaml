@@ -28,6 +28,11 @@ Parameters:
     Default: "proofs"
     Description: "S3 bucket will be AccountId-Region-S3BucketSuffix"
 
+  CloudfrontUrl:
+    Type: String
+    Default: ""
+    Description: "The URL for the cloudfront that serves our proof reports"
+
 Resources:
 
   S3BucketProofs:
@@ -135,6 +140,7 @@ Resources:
           S3_BUCKET_PROOFS: !Ref S3BucketProofs
           PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
           CBMC_CI_UPDATING_STATUS: True
+          CLOUDFRONT_URL: !Ref CloudfrontUrl
 
   BatchEventRule:
     Type: AWS::Events::Rule
@@ -445,3 +451,8 @@ Outputs:
     Value: !Ref SnapshotID
     Export:
       Name: SnapshotID
+
+  S3BucketProofs:
+    Value: !Ref S3BucketProofs
+    Export:
+      Name: S3BucketProofs

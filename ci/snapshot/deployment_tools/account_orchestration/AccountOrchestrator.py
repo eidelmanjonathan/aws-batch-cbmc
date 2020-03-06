@@ -1,12 +1,14 @@
 import logging
 from functools import reduce
 
-from deployment_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, BUILD_TOOLS_CLOUDFORMATION_DATA, \
+from deployment_tools.account_orchestration.stacks_data import GLOBALS_CLOUDFORMATION_DATA, \
+    BUILD_TOOLS_CLOUDFORMATION_DATA, \
     PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA, BUILD_TOOLS_BUCKET_POLICY, PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA, \
-    BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS
+    BUILD_TOOLS_PACKAGES, PROOF_ACCOUNT_PACKAGES, BUILD_TOOLS_ALARMS, CLOUDFRONT_CLOUDFORMATION_DATA
 from deployment_tools.account_orchestration.AwsAccount import AwsAccount
 from deployment_tools.aws_managers.key_constants import BUILD_TOOLS_SNAPSHOT_ID_KEY, \
-    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, SNAPSHOT_ID_OVERRIDE_KEY
+    BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, PIPELINES_KEY, SNAPSHOT_ID_OVERRIDE_KEY, \
+    S3_BUCKET_PROOFS_OVERRIDE_KEY, CLOUDFRONT_URL_KEY
 from deployment_tools.snapshot_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, TOOLS_SNAPSHOT_PREFIX, SnapshotManager
 
 
@@ -22,6 +24,7 @@ class AccountOrchestrator:
     """
     def __init__(self, build_tools_account_profile=None,
                  proof_account_profile=None,
+                 cloudfront_profile=None,
                  tools_account_parameters_file=None,
                  proof_account_parameters_file=None):
         """
@@ -47,6 +50,13 @@ class AccountOrchestrator:
                                             parameters_file=proof_account_parameters_file,
                                             packages_required=PROOF_ACCOUNT_PACKAGES,
                                             snapshot_s3_prefix=PROOF_SNAPSHOT_PREFIX)
+        # We sometimes deploy a Cloudfront server in a different region/account from the rest of our infra
+        if cloudfront_profile:
+            self.cloudfront_account = AwsAccount(profile=cloudfront_profile,
+                                                 shared_tool_bucket_name=self.build_tools.shared_tool_bucket_name,
+                                                 parameters_file=proof_account_parameters_file,
+                                                 packages_required=PROOF_ACCOUNT_PACKAGES,
+                                                 snapshot_s3_prefix=PROOF_SNAPSHOT_PREFIX)
 
     @staticmethod
     def _parse_snapshot_id(output):
@@ -128,23 +138,26 @@ class AccountOrchestrator:
                                        overrides=param_overrides)
 
     #
-    def deploy_proof_account_github(self):
+    def deploy_proof_account_github(self, cloudfront_url=None):
         """
         Deploys the 'github' stack in the proof account
+        cloudfront_url: string - What to post as the URL to our Cloudfront server for proof details
         """
         self.logger.info("Deploying github stack in proof account {}".format(self.proof_account.account_id))
         self.proof_account.deploy_stacks(PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
                                          s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
-                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
+                                             BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
+                                             CLOUDFRONT_URL_KEY: cloudfront_url if cloudfront_url else ""
                                          })
-
     def use_existing_proof_account_snapshot(self, snapshot_id):
         """
         Downloads and sets a proof account snapshot
         :param snapshot_id: the snapshot ID that we hope to deploy
         """
         self.proof_account.download_and_set_snapshot(snapshot_id)
+        if self.cloudfront_account:
+            self.cloudfront_account.download_and_set_snapshot(snapshot_id)
 
     def use_existing_tool_account_snapshot(self, snapshot_id):
         """
@@ -182,6 +195,16 @@ class AccountOrchestrator:
                                          overrides={
                                              BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id
                                          })
+
+    def deploy_cloudfront_stacks(self):
+        self.cloudfront_account.deploy_stacks(CLOUDFRONT_CLOUDFORMATION_DATA,
+                                              s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
+                                              overrides={
+                                                  BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
+                                                  S3_BUCKET_PROOFS_OVERRIDE_KEY: self.proof_account.parameter_manager.get_value(S3_BUCKET_PROOFS_OVERRIDE_KEY)
+                                              })
+        cloudfront_url = self.cloudfront_account.parameter_manager.get_value("CloudfrontUrl")
+        self.deploy_proof_account_github(cloudfront_url=cloudfront_url)
 
     def get_account_snapshot_id(self, source_profile):
         """
