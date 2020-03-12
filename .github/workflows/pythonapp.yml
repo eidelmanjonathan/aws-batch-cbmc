@@ -26,5 +26,4 @@ jobs:
         pip install -r requirements.txt
     - name: Test with pytest
       run: |
-        pip install pytest
-        pytest
+        python -m unittest discover -s /ci/snapshot/ -t /Users/jeid/aws_projects/eidelmanjonathan/aws-batch-cbmc/ci/snapshot/
