@@ -39,6 +39,11 @@ YAML_NAME = "cbmc-batch.yaml"
 # FIX: Lambdas put S3_BKT in env, CodeBuild puts S3_BUCKET in env.
 BKT = os.environ.get('S3_BKT') or os.environ.get('S3_BUCKET')
 CHECKOUT_FAILED_BUT_COMMIT_EXISTS_MSG = "git cat-file shows checkout {} as existing, but git checkout failed"
+RECURSIVE_CHECKOUT_FAILED_MSG = "Failed to do a git checkout --recurse-submodules. Possible reason: submodule " \
+                                "missing from this branch, or commit no longer exists"
+FORCED_CHECKOUT_FAILED_MSG = "Failed to do a git checkout --recurse-submodules with force flag. " \
+                             "Possible reason: commit no longer exists"
+
 
 ################################################################
 # argument parsing
@@ -275,7 +280,7 @@ def checkout_recurse_submodules(srcdir, checkout):
     try:
         run_command(cmd, srcdir)
     except subprocess.CalledProcessError:
-        logging.info("Failed to do a git checkout --recurse-submodules. Possible reason: submodule missing from this branch, or commit no longer exists")
+        logging.info(RECURSIVE_CHECKOUT_FAILED_MSG)
         return False
     return True
 
@@ -284,7 +289,7 @@ def checkout_force_recurse_submodules(srcdir, checkout):
     try:
         run_command(cmd, srcdir)
     except subprocess.CalledProcessError:
-        logging.info("Failed to do a git checkout --recurse-submodules with force flag. Possible reason: commit no longer exists")
+        logging.info(FORCED_CHECKOUT_FAILED_MSG)
         return False
     return True
 
