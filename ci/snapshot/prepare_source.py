@@ -25,6 +25,8 @@ import clog_writert
 ################################################################
 
 # All proofs are under one of these directories
+from checkout_config_manager import CheckoutConfig
+
 PROOF_MARKERS = ['cbmc/proofs', '.cbmc-batch/jobs']
 
 # Scripts run before taring up the repository
@@ -152,7 +154,11 @@ def get_arguments():
         An ID for identifying the current task.
         """
     )
-
+    parser.add_argument(
+        '--github-event',
+        metavar='GITHUB_EVENT_JSON',
+        help="""JSON string that is a github webhook event"""
+    )
     arg = parser.parse_args()
 
     # TODO: Refactor this boilerplate code into a common class or function.
@@ -192,6 +198,9 @@ def get_arguments():
     if not arg.task_id:
         env = os.environ.get('CODEBUILD_BUILD_ID')
         arg.task_id = env if env else None
+    if not arg.github_event:
+        env = os.environ.get("GITHUB_EVENT")
+        arg.github_event = env if env else None
     return arg
 
 ################################################################
@@ -458,12 +467,15 @@ def source_prepare():
         cbmc_ci_github.update_status("pending", "Proof jobs starting", None, "Status pending", arg.id, arg.sha, False)
         base_name = repository_basename(arg.repository)
         clone_repository(arg.repository, base_name)
+        github_event = json.loads(arg.github_event)
+        checkout_config = CheckoutConfig(github_event, base_name)
+        checkout_config.run_checkout()
 
-        if not checkout_repository(arg.sha, arg.branch, base_name):
-            cbmc_ci_github.update_status(
-                "success", "Cancelled", None, "Cancelled by force-pushed commit",
-                arg.id, arg.sha, no_status_metric=True)
-            return
+        # if not checkout_repository(arg.sha, arg.branch, base_name):
+        #     cbmc_ci_github.update_status(
+        #         "success", "Cancelled", None, "Cancelled by force-pushed commit",
+        #         arg.id, arg.sha, no_status_metric=True)
+        #     return
 
         generate_cbmc_makefiles(PROOF_MARKERS, base_name)
         generate_tarfile(arg.tarfile_name, base_name)

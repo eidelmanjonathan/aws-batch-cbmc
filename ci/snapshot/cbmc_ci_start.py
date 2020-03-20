@@ -132,6 +132,11 @@ def lambda_handler(event, context):
                     'name': 'CORRELATION_LIST',
                     'value': json.dumps(child_correlation_list),
                     'type': 'PLAINTEXT'
+                },
+                {
+                    'name': 'GITHUB_EVENT',
+                    'value': json.dumps(event),
+                    'type': 'PLAINTEXT'
                 }
             ]
         )
