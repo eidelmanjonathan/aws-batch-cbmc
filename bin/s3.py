@@ -534,9 +534,9 @@ def sync_directory_to_bucket(directory, bucket, quiet=False, delete=False, metad
         if metadata:
             cmd.append('--metadata')
             param_str = ""
-            for k in metadata.keys():
+            for k in metadata:
                 param_str += '{}={},'.format(k, metadata[k])
-            param_str = param_str[:len(param_str) - 1]
+            param_str = param_str.rstrip(",")
             cmd.append(param_str)
         if not quiet:
             print("Copying directory {} to bucket {}".format(directory, url))

@@ -31,7 +31,8 @@ def prepare_paths(opts, quiet=True):
         bkt = s3.bucket_name(path)
         if not s3.bucket_exists(bkt, region=opts['region']):
             abort("Bucket does not exist: {}".format(bkt))
-
+    # Upload proof related files to S3. We mark CBMC metadata flag as true so that Cloudfront will
+    # know to make those files publicly accessible
     if opts['copysrc']:
         s3.sync_directory_to_bucket(opts['srcdir'], opts['srcbucket'], quiet, metadata={"cbmc": "True"})
     if opts['copyws']:

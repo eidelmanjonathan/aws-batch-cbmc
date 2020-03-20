@@ -42,17 +42,17 @@ Resources:
         Code:
           ZipFile: !Sub |
             import boto3
+            import logging
+            logger = logging.getLogger('CloudFrontLambdaEdge')
+            logger.setLevel(logging.INFO)
             PROOFS_BKT = "${S3BucketProofs}"
             def lambda_handler(event, context):
               request = event['Records'][0]['cf']['request']
               headers = request['headers']
-              print(event)
               s3_filename = request['uri']
-              print(s3_filename)
               s3_obj = boto3.client("s3").get_object(Bucket=PROOFS_BKT, Key=s3_filename[1:])
-              print(s3_obj)
-              if "Metadata" in s3_obj.keys() and  "cbmc" in s3_obj['Metadata'].keys() and  s3_obj['Metadata']["cbmc"] == "True":
-                print("This file is good!")
+              if "Metadata" in s3_obj.keys() and  "cbmc" in s3_obj['Metadata'] and  s3_obj['Metadata']["cbmc"] == "True":
+                logger.info("Requested file {} has the required metadata. Serving file...".format(s3_filename))
               else:
                 raise Exception("Tried to access bad file!")
               headers['strict-transport-security'] = [{'key': 'Strict-Transport-Security', 'value': 'max-age=63072000; includeSubdomains; preload'}]
