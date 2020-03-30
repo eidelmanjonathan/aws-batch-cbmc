@@ -411,6 +411,9 @@ Resources:
           - Name: CBMC_CI_UPDATING_STATUS
             Type: PLAINTEXT
             Value: "True"
+          - Name: CLOUDFRONT_URL
+            Type: PLAINTEXT
+            Value: !Ref CloudfrontUrl
       Name: "Prepare-Source-Project"
       ServiceRole: !Ref PrepareSourceRole
       Source:
