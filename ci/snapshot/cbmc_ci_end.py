@@ -15,6 +15,8 @@ import clog_writert
 
 # S3 Bucket name for storing CBMC Batch packages and outputs
 bkt = os.environ['S3_BUCKET_PROOFS']
+PROPERTY = "property"
+REPORT = "report"
 
 def read_from_s3(s3_path):
     """Read from a file in S3 Bucket
@@ -38,10 +40,10 @@ class Job_name_info:
             self.is_cbmc_batch_job = False
 
     def is_cbmc_property_job(self):
-        return self.is_cbmc_batch_job and self.type == "property"
+        return self.is_cbmc_batch_job and self.type == PROPERTY
 
     def is_cbmc_report_job(self):
-        return self.is_cbmc_batch_job and self.type == "report"
+        return self.is_cbmc_batch_job and self.type == REPORT
 
     @staticmethod
     def check_job_name(job_name):

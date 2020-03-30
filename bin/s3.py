@@ -269,14 +269,9 @@ def copy_file_to_object(filename, path, client=None, region=None):
     key = key_name(path)
 
     try:
-        client.upload_file(filename, bucket, key, ExtraArgs={
-            "Metadata": {
-                "x-amz-meta-cbmc": "True"
-            }
-        })
+        client.upload_file(filename, bucket, key)
     except ClientError as exc:
-        abort("Error copying file to object: {}, {}".format(filename, path),
-              "", data=exc)
+        abort(f"Error copying file to object: {filename}, {path}","", data=exc)
 
 def copy_object_to_file(objectname, filename, client=None, region=None):
     """Copy an S3 object to a local file"""
@@ -540,13 +535,12 @@ def sync_directory_to_bucket(directory, bucket, quiet=False, delete=False, metad
             cmd.append(param_str)
         if not quiet:
             print("Copying directory {} to bucket {}".format(directory, url))
-            print("Running copy command: {}".format(cmd))
+            print(f"Running copy command: {cmd}")
         sys.stdout.flush()
         subprocess.check_call(cmd)
     except Exception as exc:
         sys.stdout.flush()
-        print("Error copying directory {} to bucket {} ({})"
-              .format(directory, url, exc))
+        print(f"Error copying directory {directory} to bucket {url} ({exc})")
         sys.stdout.flush()
         raise exc
 

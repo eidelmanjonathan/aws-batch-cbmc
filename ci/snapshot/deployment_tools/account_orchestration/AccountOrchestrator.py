@@ -19,6 +19,8 @@ class AccountOrchestrator:
     kinds of stacks necessary to run CI.
 
     """
+    #FIXME: shouldn't combined named params with positional params in method calls (throughout the file)
+
     def __init__(self, build_tools_account_profile=None,
                  proof_account_profile=None,
                  cloudfront_profile=None,
@@ -194,7 +196,7 @@ class AccountOrchestrator:
                                          })
 
     def deploy_cloudfront_stacks(self):
-        self.cloudfront_account.deploy_stacks(CLOUDFRONT_CLOUDFORMATION_DATA,
+        self.cloudfront_account.deploy_stacks(stacks_to_deploy=CLOUDFRONT_CLOUDFORMATION_DATA,
                                               s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                               overrides={
                                                   BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,

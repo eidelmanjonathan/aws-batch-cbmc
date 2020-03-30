@@ -15,6 +15,7 @@ from cbmc import CBMC
 import options
 
 ################################################################
+PUBLIC_WEBSITE_METADATA = {"public-website-contents": "True"}
 
 def abort(msg):
     """Abort a CBMC job"""
@@ -34,11 +35,11 @@ def prepare_paths(opts, quiet=True):
     # Upload proof related files to S3. We mark CBMC metadata flag as true so that Cloudfront will
     # know to make those files publicly accessible
     if opts['copysrc']:
-        s3.sync_directory_to_bucket(opts['srcdir'], opts['srcbucket'], quiet, metadata={"cbmc": "True"})
+        s3.sync_directory_to_bucket(opts['srcdir'], opts['srcbucket'], quiet, metadata=PUBLIC_WEBSITE_METADATA)
     if opts['copyws']:
-        s3.sync_directory_to_bucket(opts['wsdir'], opts['wsbucket'], quiet, metadata={"cbmc":"True"})
+        s3.sync_directory_to_bucket(opts['wsdir'], opts['wsbucket'], quiet, metadata=PUBLIC_WEBSITE_METADATA)
     if opts['copyout']:
-        s3.sync_directory_to_bucket(opts['outdir'], opts['outbucket'], quiet, metadata={"cbmc":"True"})
+        s3.sync_directory_to_bucket(opts['outdir'], opts['outbucket'], quiet, metadata=PUBLIC_WEBSITE_METADATA)
 
 def consume_paths(opts, quiet=True):
     """Copy the output path"""

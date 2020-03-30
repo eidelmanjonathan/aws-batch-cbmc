@@ -1,4 +1,4 @@
-# Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 AWSTemplateFormatVersion: 2010-09-09
@@ -38,7 +38,6 @@ Resources:
         Runtime: python3.7
         Handler: index.lambda_handler
         Timeout: 5
-#        AutoPublishAlias: live
         Code:
           ZipFile: !Sub |
             import boto3
@@ -51,10 +50,10 @@ Resources:
               headers = request['headers']
               s3_filename = request['uri']
               s3_obj = boto3.client("s3").get_object(Bucket=PROOFS_BKT, Key=s3_filename[1:])
-              if "Metadata" in s3_obj.keys() and  "cbmc" in s3_obj['Metadata'] and  s3_obj['Metadata']["cbmc"] == "True":
-                logger.info("Requested file {} has the required metadata. Serving file...".format(s3_filename))
+              if "Metadata" in s3_obj.keys() and  "public-website-contents" in s3_obj['Metadata'] and  s3_obj['Metadata']["public-website-contents"] == "True":
+                logger.info(f"Requested file {s3_filename} has the required metadata. Serving file...")
               else:
-                raise Exception("Tried to access bad file!")
+                raise Exception("Tried to access bad file {s3_filename} that has no metadata!")
               headers['strict-transport-security'] = [{'key': 'Strict-Transport-Security', 'value': 'max-age=63072000; includeSubdomains; preload'}]
               headers['content-security-policy'] = [{'key': 'Content-Security-Policy', 'value': "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"}]
               headers['x-content-type-options'] = [{'key': 'X-Content-Type-Options', 'value': 'nosniff'}]
@@ -67,7 +66,6 @@ Resources:
     Properties:
       ServiceToken: !GetAtt PublishLambdaVersion.Arn
       FunctionName: !Ref LambdaEdgeFunctionSample
-#      Nonce: !Ref Nonce
 
   # Custom resource for getting latest version of a lambda,
   # as required by CloudFront.

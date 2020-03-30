@@ -16,10 +16,8 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname):
             'context': "CBMC Batch: " + ctx,
             'description': desc}
     if jobname:
-        kwds['target_url'] = (
-            "https://{}/{}/out/html/index.html"
-            .format(os.environ['CLOUDFRONT_URL'], jobname)
-        )
+        cloudfront_url = os.environ['CLOUDFRONT_URL']
+        kwds['target_url'] = (f"https://{cloudfront_url}/{jobname}/out/html/index.html")
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')
     if updating and updating.strip().lower() == 'true':
