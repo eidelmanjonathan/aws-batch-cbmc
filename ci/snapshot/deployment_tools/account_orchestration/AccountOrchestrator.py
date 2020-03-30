@@ -142,7 +142,7 @@ class AccountOrchestrator:
         Deploys the 'github' stack in the proof account
         cloudfront_url: string - What to post as the URL to our Cloudfront server for proof details
         """
-        self.logger.info("Deploying github stack in proof account {}".format(self.proof_account.account_id))
+        self.logger.info(f"Deploying github stack in proof account {self.proof_account.account_id}")
         self.proof_account.deploy_stacks(PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA,
                                          s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
