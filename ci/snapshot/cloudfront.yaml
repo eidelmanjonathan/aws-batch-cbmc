@@ -45,6 +45,15 @@ Resources:
             logger = logging.getLogger('CloudFrontLambdaEdge')
             logger.setLevel(logging.INFO)
             PROOFS_BKT = "${S3BucketProofs}"
+
+            def add_security_headers(headers):
+              headers['strict-transport-security'] = [{'key': 'Strict-Transport-Security', 'value': 'max-age=63072000; includeSubdomains; preload'}]
+              headers['content-security-policy'] = [{'key': 'Content-Security-Policy', 'value': "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"}]
+              headers['x-content-type-options'] = [{'key': 'X-Content-Type-Options', 'value': 'nosniff'}]
+              headers['x-frame-options'] = [{'key': 'X-Frame-Options', 'value': 'DENY'}]
+              headers['x-xss-protection'] = [{'key': 'X-XSS-Protection', 'value': '1; mode=block'}]
+              headers['referrer-policy'] = [{'key': 'Referrer-Policy', 'value': 'same-origin'}]
+
             def lambda_handler(event, context):
               request = event['Records'][0]['cf']['request']
               headers = request['headers']
@@ -54,12 +63,7 @@ Resources:
                 logger.info(f"Requested file {s3_filename} has the required metadata. Serving file...")
               else:
                 raise Exception(f"Tried to access bad file {s3_filename} that has no metadata!")
-              headers['strict-transport-security'] = [{'key': 'Strict-Transport-Security', 'value': 'max-age=63072000; includeSubdomains; preload'}]
-              headers['content-security-policy'] = [{'key': 'Content-Security-Policy', 'value': "default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"}]
-              headers['x-content-type-options'] = [{'key': 'X-Content-Type-Options', 'value': 'nosniff'}]
-              headers['x-frame-options'] = [{'key': 'X-Frame-Options', 'value': 'DENY'}]
-              headers['x-xss-protection'] = [{'key': 'X-XSS-Protection', 'value': '1; mode=block'}]
-              headers['referrer-policy'] = [{'key': 'Referrer-Policy', 'value': 'same-origin'}]
+              add_security_headers(headers)
               return request
   IndexLambdaVersion:
     Type: Custom::LatestLambdaVersion
