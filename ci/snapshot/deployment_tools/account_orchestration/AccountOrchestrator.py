@@ -38,6 +38,7 @@ class AccountOrchestrator:
                                       parameters_file=tools_account_parameters_file,
                                       packages_required=BUILD_TOOLS_PACKAGES,
                                       snapshot_s3_prefix=TOOLS_SNAPSHOT_PREFIX)
+        self.cloudfront_account = None
 
         if proof_account_profile:
             self.proof_account_write_access_snapshot = SnapshotManager(self.build_tools.session,
