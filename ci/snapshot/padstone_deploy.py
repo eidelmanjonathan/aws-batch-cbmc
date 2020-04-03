@@ -117,6 +117,6 @@ if __name__ == '__main__':
         account_orchestrator.use_existing_proof_account_snapshot(snapshot_to_deploy)
         account_orchestrator.deploy_proof_account_github()
         account_orchestrator.deploy_proof_account_stacks()
-        account_orchestrator.set_proof_account_environment_variables()
         if args.cloudfront_profile:
             account_orchestrator.deploy_cloudfront_stacks()
+        account_orchestrator.set_proof_account_environment_variables()
