@@ -234,3 +234,12 @@ class AccountOrchestrator:
                             BUILD_TOOLS_CLOUDFORMATION_DATA.keys())
         all_pipelines = reduce(lambda l1, l2: l1 + l2, all_pipelines)
         self.build_tools.trigger_and_wait_for_pipelines(all_pipelines)
+
+    def wait_for_build_pipelines(self):
+        """
+        Waits for all pipelines to complete
+        """
+        all_pipelines = map(lambda k: BUILD_TOOLS_CLOUDFORMATION_DATA[k][PIPELINES_KEY],
+                            BUILD_TOOLS_CLOUDFORMATION_DATA.keys())
+        all_pipelines = reduce(lambda l1, l2: l1 + l2, all_pipelines)
+        self.build_tools.wait_for_pipelines(all_pipelines)
