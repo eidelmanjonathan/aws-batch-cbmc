@@ -174,7 +174,7 @@ class AwsAccount:
             if PIPELINES_KEY in stacks_to_deploy[key].keys():
                 pipelines.extend(stacks_to_deploy[key][PIPELINES_KEY])
         self.stacks.wait_for_stable_stacks(stack_names)
-        self.wait_for_pipelines(pipelines)
+        self._wait_for_pipelines(pipelines)
 
 
     def get_update_github_status(self):
@@ -246,13 +246,13 @@ class AwsAccount:
         for pipeline in pipelines:
             self.pipeline_manager.trigger_pipeline_async(pipeline)
 
-    def wait_for_pipelines(self, pipelines):
+    def _wait_for_pipelines(self, pipelines):
         for pipeline in pipelines:
             self.pipeline_manager.wait_for_pipeline_completion(pipeline)
 
     def trigger_and_wait_for_pipelines(self, pipelines):
         self._trigger_pipelines(pipelines)
-        self.wait_for_pipelines(pipelines)
+        self._wait_for_pipelines(pipelines)
 
     def _get_s3_url_for_template(self, template_name, parameter_overrides=None):
         snapshot_id = self.snapshot_id if self.snapshot_id else self.parameter_manager.get_value(ParameterManager.SNAPSHOT_ID_KEY, parameter_overrides=parameter_overrides)
