@@ -151,12 +151,6 @@ def lambda_handler(event, context):
                         response['status'] = clog_writert.FAILED
                 else:
                     response['status'] = clog_writert.FAILED
-            elif job_name_info.is_cbmc_report_job():
-                job_type = job_name_info.type
-                is_report_job = job_name_info.is_cbmc_report_job()
-                print(f"type: {job_type}, is_cbmc_report_job: {is_report_job}, job name: {job_name}")
-                update_status("success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
-                response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
             else:
                 response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
 
