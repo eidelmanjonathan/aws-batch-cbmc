@@ -68,6 +68,61 @@ class Job_name_info:
         """
         return self.job_name
 
+
+class CbmcResponseHandler:
+
+    def __init__(self, job_name_info=None,
+                 job_name=None,
+                 parent_logger=None,
+                 status=None,
+                 event=None,
+                 response=None,
+                 job_dir=None,
+                 s3_dir=None,
+                 desc=None,
+                 repo_id=None,
+                 sha=None, is_draft=None):
+        self.job_name_info = job_name_info
+        self.job_name = job_name
+        self.parent_logger = parent_logger
+        self.status = status
+        self.event = event
+        self.response = response
+        self.job_dir = job_dir
+        self.s3_dir = s3_dir
+        self.desc = desc
+        self.repo_id = repo_id
+        self.sha = sha
+        self.is_draft = is_draft
+
+
+    def handle_github_update(self, post_url=False):
+        print("type: {}, is_cbmc_property_job: {}, job name: {}".format(self.job_name_info.type,
+                                                                        self.job_name_info.is_cbmc_property_job(),
+                                                                        self.job_name))
+        # write parent task information once we get property answer.
+        self.parent_logger.started()
+        self.parent_logger.summary(clog_writert.SUCCEEDED, self.event, self.response)
+
+        if self.status == "SUCCEEDED":
+            # Get expected output substring
+            expected = read_from_s3(self.s3_dir + "/expected.txt")
+            self.response['expected_result'] = expected.decode('ascii')
+            # Get CBMC output
+            cbmc = read_from_s3(self.s3_dir + "/out/cbmc.txt")
+            if expected in cbmc:
+                print("Expected Verification Result: {}".format(self.s3_dir))
+                update_status(
+                    "success", self.job_dir, self.s3_dir, self.desc, self.repo_id, self.sha, self.is_draft, post_url=post_url)
+                self.response['status'] = clog_writert.SUCCEEDED
+            else:
+                print("Unexpected Verification Result: {}".format(self.s3_dir))
+                update_status(
+                    "failure", self.job_dir, self.s3_dir, self.desc, self.repo_id, self.sha, self.is_draft, post_url=post_url)
+                self.response['status'] = clog_writert.FAILED
+        else:
+            self.response['status'] = clog_writert.FAILED
+
 def lambda_handler(event, context):
     """
     Update the status of the GitHub commit appropriately depending on CBMC
@@ -125,32 +180,14 @@ def lambda_handler(event, context):
         child_logger.started()
 
         try:
+            response_handler = CbmcResponseHandler(job_name_info=job_name_info, job_name=job_name,
+                                                   parent_logger=parent_logger, status=status, event=event,
+                                                   response=response, job_dir=job_dir, s3_dir=s3_dir, desc=desc,
+                                                   repo_id=repo_id, sha=sha, is_draft=is_draft)
             if job_name_info.is_cbmc_property_job():
-                print("type: {}, is_cbmc_property_job: {}, job name: {}".format(job_name_info.type,
-                                                                                job_name_info.is_cbmc_property_job(),
-                                                                                job_name))
-                # write parent task information once we get property answer.
-                parent_logger.started()
-                parent_logger.summary(clog_writert.SUCCEEDED, event, response)
-
-                if status == "SUCCEEDED":
-                    # Get expected output substring
-                    expected = read_from_s3(s3_dir + "/expected.txt")
-                    response['expected_result'] = expected.decode('ascii')
-                    # Get CBMC output
-                    cbmc = read_from_s3(s3_dir + "/out/cbmc.txt")
-                    if expected in cbmc:
-                        print("Expected Verification Result: {}".format(s3_dir))
-                        update_status(
-                            "success", job_dir, s3_dir, desc, repo_id, sha, is_draft)
-                        response['status'] = clog_writert.SUCCEEDED
-                    else:
-                        print("Unexpected Verification Result: {}".format(s3_dir))
-                        update_status(
-                            "failure", job_dir, s3_dir, desc, repo_id, sha, is_draft)
-                        response['status'] = clog_writert.FAILED
-                else:
-                    response['status'] = clog_writert.FAILED
+                response_handler.handle_github_update(post_url=False)
+            elif job_name_info.is_cbmc_report_job():
+                response_handler.handle_github_update(post_url=True)
             else:
                 response['status'] = clog_writert.SUCCEEDED if (status == "SUCCEEDED") else clog_writert.FAILED
 

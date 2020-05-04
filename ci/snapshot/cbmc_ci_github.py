@@ -11,11 +11,11 @@ import github
 
 from cbmc_ci_timer import Timer
 
-def update_github_status(repo_id, sha, status, ctx, desc, jobname):
+def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = False):
     kwds = {'state': status,
             'context': "CBMC Batch: " + ctx,
             'description': desc}
-    if jobname:
+    if jobname and post_url:
         cloudfront_url = os.environ['CLOUDFRONT_URL']
         kwds['target_url'] = (f"https://{cloudfront_url}/{jobname}/out/html/index.html")
 
@@ -42,7 +42,7 @@ def get_github_personal_access_token():
     return str(json.loads(s['SecretString'])[0]['GitHubPAT'])
 
 
-def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric):
+def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric, post_url = False):
     """Update GitHub Status
 
     Relevant documentation:
@@ -77,7 +77,7 @@ def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric):
     timer = Timer("Updating GitHub status {} with description {}".format(
         status, desc))
     try:
-        update_github_status(repo_id, sha, status, ctx, desc, jobname)
+        update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url=post_url)
         cloudwatch.put_metric_data(
             MetricData=[
                 {
