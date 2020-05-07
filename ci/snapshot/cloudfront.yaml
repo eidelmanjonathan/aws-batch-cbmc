@@ -58,11 +58,19 @@ Resources:
               request = event['Records'][0]['cf']['request']
               headers = request['headers']
               s3_filename = request['uri']
-              s3_obj = boto3.client("s3").get_object(Bucket=PROOFS_BKT, Key=s3_filename[1:])
+              logger.info(f"Trying to serve S3 object: {s3_filename}")
+              try:
+                s3_obj = boto3.client("s3").get_object(Bucket=PROOFS_BKT, Key=s3_filename[1:])
+              except Exception as e:
+                logger.error(f"Failed to download object from S3: {s3_filename}", exc_info=True)
+                request["body"] = "<h1>404 not found</h1>"
+
+
               if "Metadata" in s3_obj.keys() and  "public-website-contents" in s3_obj['Metadata'] and  s3_obj['Metadata']["public-website-contents"] == "True":
                 logger.info(f"Requested file {s3_filename} has the required metadata. Serving file...")
               else:
-                raise Exception(f"Tried to access bad file {s3_filename} that has no metadata!")
+                logger.error(f"Tried to access bad file {s3_filename} that has no metadata!")
+                request["body"] = "<h1>404 not found</h1>"
               add_security_headers(headers)
               return request
   IndexLambdaVersion:
