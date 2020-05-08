@@ -64,6 +64,7 @@ Resources:
               except Exception as e:
                 logger.error(f"Failed to download object from S3: {s3_filename}", exc_info=True)
                 request["body"] = "<h1>404 not found</h1>"
+                return request
 
 
               if "Metadata" in s3_obj.keys() and  "public-website-contents" in s3_obj['Metadata'] and  s3_obj['Metadata']["public-website-contents"] == "True":
