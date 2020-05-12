@@ -26,7 +26,11 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = Fa
         g = github.Github(get_github_personal_access_token())
         print("Updating GitHub as user: {}".format(g.get_user().login))
         print("1-hour rate limit remaining: {}".format(g.rate_limiting[0]))
-        g.get_repo(int(repo_id)).get_commit(sha=sha).create_status(**kwds)
+        repo = g.get_repo(int(repo_id))
+        if "origin/pr/" in sha:
+            pr_num = sha.replace("origin/pr/", "")
+            sha = repo.get_pull(int(pr_num)).head.sha
+        repo.get_commit(sha=sha).create_status(**kwds)
         return
 
     print("Not updating GitHub status")
