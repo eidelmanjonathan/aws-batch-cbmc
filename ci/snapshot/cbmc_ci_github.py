@@ -225,6 +225,32 @@ def parse_pr(body):
 
     return (base_repo_name, base_repo_id, base_repo_branch, head_sha, draft)
 
+def parse_issue_type(body):
+    """
+    Parse the pull request event body for the base and head branches,
+    and get the repository name, repository id, and branch name for the base
+    branch, and get the sha for the head commit on the head branch.
+
+    event has a format as described here:
+        https://developer.github.com/v3/activity/events/types/#pullrequestevent
+
+    """
+    comment_text = body["comment"]["body"]
+    if comment_text in ["CBMC_RETRY"]:
+        base_repo_name = body["repository"]["full_name"]
+        base_repo_id = body["repository"]["id"]
+        base_repo_branch = "COMMENT_RETRY"
+        draft = False  # FIXME: We are assuming always not a draft
+        pr_num = body["issue"]["number"]
+        head_sha = f"origin/pr/{pr_num}"
+        return (base_repo_name, base_repo_id, base_repo_branch, head_sha, draft)
+    return (None, None, None, None, None)
+
+
+
+
+
+
 def parse_push(body):
     """
     Parse the push event body and get the repository name, repository id,
@@ -271,4 +297,10 @@ def parse_event(event):
         return parse_pr(body)
     if event_type == "push":
         return parse_push(body)
-    raise ValueError("Unexpected event type: {}".format(event_type))
+    if event_type == "issue_comment":
+        return parse_issue_type(body)
+    else:
+        print(f"Unhandled webhook event type: '{event_type}'. Ignoring...")
+        return (None, None, None, None, None)
+
+    # raise ValueError("Unexpected event type: {}".format(event_type))
