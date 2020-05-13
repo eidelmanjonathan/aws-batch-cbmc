@@ -10,6 +10,7 @@ import boto3
 import github
 
 from cbmc_ci_timer import Timer
+CBMC_RETRY_KEYWORDS = ["CBMC_RETRY", "/cbmc run checks"]
 
 def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = False):
     kwds = {'state': status,
@@ -240,15 +241,18 @@ def parse_issue_type(body):
 
     """
     comment_text = body["comment"]["body"]
-    if comment_text in ["CBMC_RETRY"]:
-        base_repo_name = body["repository"]["full_name"]
-        base_repo_id = body["repository"]["id"]
-        base_repo_branch = "COMMENT_RETRY"
-        draft = False  # FIXME: We are assuming always not a draft
-        pr_num = body["issue"]["number"]
-        head_sha = f"origin/pr/{pr_num}"
-        return (base_repo_name, base_repo_id, base_repo_branch, head_sha, draft)
-    return (None, None, None, None, None)
+    if comment_text not in CBMC_RETRY_KEYWORDS:
+        # We ignore all events that are not retry keywords
+        return (None, None, None, None, None)
+
+    base_repo_name = body["repository"]["full_name"]
+    base_repo_id = body["repository"]["id"]
+    base_repo_branch = "COMMENT_RETRY"
+    draft = False  # FIXME: We are assuming always not a draft
+    pr_num = body["issue"]["number"]
+    head_sha = f"origin/pr/{pr_num}"
+    return (base_repo_name, base_repo_id, base_repo_branch, head_sha, draft)
+
 
 
 
