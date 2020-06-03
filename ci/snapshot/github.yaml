@@ -85,6 +85,10 @@ Resources:
                 Effect: Allow
                 Resource: !Join ["/", [!Sub "${S3BucketProofs.Arn}", "*"]]
               - Action:
+                  - sqs:SendMessage
+                Effect: Allow
+                Resource: *
+              - Action:
                   - s3:ListBucket
                 Effect: Allow
                 Resource: !Sub "${S3BucketProofs.Arn}"
@@ -339,7 +343,10 @@ Resources:
                   - s3:ListBucket
                 Effect: Allow
                 Resource: !Sub "arn:aws:s3:::${S3BucketToolsName}"
-
+              - Action:
+                  - sqs:SendMessage
+                Effect: Allow
+                Resource: *
               - Action:
                   - s3:GetObject
                   - s3:PutObject
