@@ -9,7 +9,7 @@ Resources:
   GitHubCallQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: GitHubCallQueue
+      QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallQueue"
       VisibilityTimeout: 900
 
 
