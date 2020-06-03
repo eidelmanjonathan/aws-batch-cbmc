@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+
+  GitHubCallQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: GitHubCallQueue
+      VisibilityTimeout: 900
+
+
+  ProcessGithubCallsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import logging
+          def lambda_handler(event, request):
+            print(event)
+            print("test")
+      Handler: index.lambda_handler
+      Role: !GetAtt BatchLambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 512
+
+  QueueLambdaEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref ProcessGithubCallsLambda
+      EventSourceArn: !GetAtt GitHubCallQueue.Arn
+
+#      Environment:
+#        Variables:
+#          PROJECT_NAME: !Ref ProjectName
+#          S3_BKT: !Ref S3BucketToolsName
+#          PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
+
+  BatchLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "batch-lambda-policy-${AWS::Region}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+              - Action:
+                  - batch:DescribeJobQueues
+                  - batch:DescribeJobDefinitions
+                  - batch:SubmitJob
+                  - batch:ListJobs
+                Effect: Allow
+                Resource: "*"
+              - Action:
+                  - cloudwatch:PutMetricData
+                Effect: Allow
+                Resource: "*"
+              - Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Effect: Allow
+                Resource: "*"

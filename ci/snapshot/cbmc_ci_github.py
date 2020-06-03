@@ -21,17 +21,18 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = Fa
         kwds['target_url'] = (f"https://{cloudfront_url}/{jobname}/out/html/index.html")
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')
+    queue_url = os.environ.get("GITHUB_QUEUE_URL")
     if updating and updating.strip().lower() == 'true':
-        print("Updating GitHub status")
-        print(json.dumps(kwds, indent=2))
-        g = github.Github(get_github_personal_access_token())
-        print("Updating GitHub as user: {}".format(g.get_user().login))
-        print("1-hour rate limit remaining: {}".format(g.rate_limiting[0]))
-        repo = g.get_repo(int(repo_id))
-        if "origin/pr/" in sha:
-            pr_num = sha.replace("origin/pr/", "")
-            sha = repo.get_pull(int(pr_num)).head.sha
-        repo.get_commit(sha=sha).create_status(**kwds)
+        update_github_msg = {
+            "repo_id": repo_id,
+            "oath": get_github_personal_access_token(),
+            "commit": sha,
+            "status": status,
+            "context":ctx,
+            "description": desc
+        }
+        sqs = boto3.client("sqs")
+        sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(update_github_msg))
         return
 
     print("Not updating GitHub status")
