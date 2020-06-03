@@ -1,4 +1,9 @@
 AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  SnapshotID:
+    Type: String
+  S3BucketToolsName:
+    Type: String
 Resources:
 
   GitHubCallQueue:
@@ -12,13 +17,9 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        ZipFile: !Sub |
-          import boto3
-          import logging
-          def lambda_handler(event, request):
-            print(event)
-            print("test")
-      Handler: index.lambda_handler
+        S3Bucket: !Ref S3BucketToolsName
+        S3Key: !Sub "snapshot/snapshot-${SnapshotID}/lambda.zip"
+      Handler: github_worker_lambda.lambda_handler
       Role: !GetAtt BatchLambdaRole.Arn
       Runtime: python3.7
       Timeout: 900

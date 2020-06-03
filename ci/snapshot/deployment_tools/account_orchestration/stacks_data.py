@@ -112,7 +112,15 @@ PROOF_ACCOUNT_GITHUB_CLOUDFORMATION_DATA = {
                              'GitHubRepository',
                              'ProjectName',
                              'S3BucketToolsName',
+                             'GithubQueueUrl',
                              'SnapshotID']
+    }
+}
+
+GITHUB_WORKER_DATA = {
+    "github-worker": {
+        TEMPLATE_NAME_KEY: "github_worker.yaml",
+        PARAMETER_KEYS_KEY: ["SnapshotID", "S3BucketToolsName"]
     }
 }
 
