@@ -87,7 +87,7 @@ Resources:
               - Action:
                   - sqs:SendMessage
                 Effect: Allow
-                Resource: *
+                Resource: "*"
               - Action:
                   - s3:ListBucket
                 Effect: Allow
@@ -346,7 +346,7 @@ Resources:
               - Action:
                   - sqs:SendMessage
                 Effect: Allow
-                Resource: *
+                Resource: "*"
               - Action:
                   - s3:GetObject
                   - s3:PutObject
