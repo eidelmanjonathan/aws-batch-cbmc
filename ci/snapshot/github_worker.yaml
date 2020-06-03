@@ -74,3 +74,8 @@ Resources:
                   - sqs:GetQueueAttributes
                 Effect: Allow
                 Resource: "*"
+Outputs:
+  GithubQueueUrl:
+    Value: !Ref  GitHubCallQueue
+    Export:
+      Name: GithubQueueUrl
