@@ -33,11 +33,17 @@ def lambda_handler(event, request):
         seconds = floor(time_to_reset.total_seconds())
         print(f"Rate limit remaining: {remaining_calls}")
         print(f"Seconds to reset: {seconds}")
+        if remaining_calls == 0:
+            print("Hit the Github API ratelimit")
+            enqueue_message(json.dumps(github_msg))
+            raise Exception(f"Hit the Github API ratelimit. Failed to deliver message:{json.dumps(github_msg, indent=2)}")
         if remaining_calls < THROTTLE_THRESHOLD and remaining_calls <= seconds:
             sleep_time = ceil(seconds / remaining_calls)
-
+            # Lambda might timeout if we sleep this long. Retry later
             if sleep_time >= TIMEOUT_LIMIT:
+                print(f"Running low on github Sleeping for {sleep_time} seconds")
                 sleep(TIMEOUT_LIMIT)
+                print(f"Placing message back on the queue for later retry: {json.dumps(github_msg, indent=2)}")
                 enqueue_message(json.dumps(github_msg))
                 return
 
