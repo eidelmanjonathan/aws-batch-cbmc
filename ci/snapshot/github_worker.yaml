@@ -31,11 +31,6 @@ Resources:
       FunctionName: !Ref ProcessGithubCallsLambda
       EventSourceArn: !GetAtt GitHubCallQueue.Arn
 
-#      Environment:
-#        Variables:
-#          PROJECT_NAME: !Ref ProjectName
-#          S3_BKT: !Ref S3BucketToolsName
-#          PKG_BKT: !Sub "${S3BucketToolsName}/snapshot/snapshot-${SnapshotID}"
 
   BatchLambdaRole:
     Type: AWS::IAM::Role
