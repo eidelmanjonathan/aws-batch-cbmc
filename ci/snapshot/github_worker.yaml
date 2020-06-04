@@ -24,10 +24,9 @@ Resources:
       Runtime: python3.7
       Timeout: 900
       MemorySize: 512
-      EnvironmentVariables:
-        - Name: QUEUE_URL
-          Type: PLAINTEXT
-          Value: !Ref GitHubCallQueue
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref GitHubCallQueue
 
   QueueLambdaEventSource:
     Type: AWS::Lambda::EventSourceMapping
