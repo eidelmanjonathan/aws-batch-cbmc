@@ -13,12 +13,10 @@ from cbmc_ci_timer import Timer
 CBMC_RETRY_KEYWORDS = ["CBMC_RETRY", "/cbmc run checks"]
 
 def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = False):
-    kwds = {'state': status,
-            'context': "CBMC Batch: " + ctx,
-            'description': desc}
+    target_url = ""
     if jobname and post_url:
         cloudfront_url = os.environ['CLOUDFRONT_URL']
-        kwds['target_url'] = (f"https://{cloudfront_url}/{jobname}/out/html/index.html")
+        target_url = (f"https://{cloudfront_url}/{jobname}/out/html/index.html")
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')
     queue_url = os.environ.get("GITHUB_QUEUE_URL")
@@ -29,14 +27,15 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = Fa
             "commit": sha,
             "status": status,
             "context":ctx,
-            "description": desc
+            "description": desc,
+            "cloudfront_url": target_url
         }
         sqs = boto3.client("sqs")
+        print(f"Sending a message to the Github worker queue: {json.dumps(update_github_msg, indent=2)}")
         sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(update_github_msg))
         return
 
     print("Not updating GitHub status")
-    print(json.dumps(kwds, indent=2))
 
 def get_github_personal_access_token():
     """
