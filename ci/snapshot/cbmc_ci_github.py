@@ -26,7 +26,7 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = Fa
             "oath": get_github_personal_access_token(),
             "commit": sha,
             "status": status,
-            "context":ctx,
+            "context": "CBMC Batch: " + ctx,
             "description": desc,
             "cloudfront_url": target_url
         }

@@ -13,11 +13,12 @@ class GithubUpdater:
         self.g = github.Github(oath_token)
         self.repo = self.g.get_repo(repo_id)
 
-    def update_status(self, status=GIT_SUCCESS, proof_name=None, commit_sha=None, cloudfront_url=None):
+    def update_status(self, status=GIT_SUCCESS, proof_name=None, commit_sha=None, cloudfront_url=None, description=None):
         kwds = {'state': status,
                 'context': proof_name,
-                'description': "Description",
-                'target_url': cloudfront_url}
+                'description': description}
+        if cloudfront_url is not None:
+            kwds["target_url"] = cloudfront_url
         print(f"Updating github status with the following parameters:\n{json.dumps(kwds, indent=2)}")
         self.repo.get_commit(sha=commit_sha).create_status(**kwds)
         return

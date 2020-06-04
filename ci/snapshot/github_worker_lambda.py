@@ -43,6 +43,6 @@ def lambda_handler(event, request):
 
             print(f"Running low on github Sleeping for {sleep_time} seconds")
             sleep(sleep_time)
-
+        cloudfront_url = github_msg["cloudfront_url"] if "cloudfront_url" in github_msg else None
         g.update_status(status=github_msg["status"], proof_name=github_msg["context"], commit_sha=github_msg["commit"],
-                        cloudfront_url=github_msg["cloudfront_url"])
+                        cloudfront_url=cloudfront_url, description=github_msg["description"])
