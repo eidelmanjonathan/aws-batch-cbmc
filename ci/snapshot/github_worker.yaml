@@ -23,17 +23,30 @@ Resources:
       Role: !GetAtt BatchLambdaRole.Arn
       Runtime: python3.7
       Timeout: 900
+      ReservedConcurrentExecutions: 1
       MemorySize: 512
       Environment:
         Variables:
           QUEUE_URL: !Ref GitHubCallQueue
+          GITHUB_QUEUE_NAME: !GetAtt GitHubCallQueue.QueueName
 
-  QueueLambdaEventSource:
-    Type: AWS::Lambda::EventSourceMapping
+ BatchEventRule:
+    Type: AWS::Events::Rule
     Properties:
-      FunctionName: !Ref ProcessGithubCallsLambda
-      EventSourceArn: !GetAtt GitHubCallQueue.Arn
+      Description: "Batch state change rule"
+      ScheduleExpression: cron(0/1 * * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BatchStatusLambda.Arn
+          Id: "BatchStateChange"
 
+  BatchEventPolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BatchStatusLambda
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BatchEventRule.Arn
 
   BatchLambdaRole:
     Type: AWS::IAM::Role
