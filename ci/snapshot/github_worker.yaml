@@ -37,7 +37,7 @@ Resources:
       ScheduleExpression: cron(0/1 * * * ? *)
       State: ENABLED
       Targets:
-        - Arn: !GetAtt BatchStatusLambda.Arn
+        - Arn: !GetAtt ProcessGithubCallsLambda.Arn
           Id: "BatchStateChange"
 
   BatchEventPolicy:
