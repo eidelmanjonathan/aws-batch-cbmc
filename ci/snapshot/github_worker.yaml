@@ -44,7 +44,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref BatchStatusLambda
+      FunctionName: !Ref ProcessGithubCallsLambda
       Principal: events.amazonaws.com
       SourceArn: !GetAtt BatchEventRule.Arn
 
