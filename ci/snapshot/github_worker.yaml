@@ -18,7 +18,7 @@ Resources:
   GitHubDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallQueue"
+      QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallDeadLetterQueue"
 
   ProcessGithubCallsLambda:
     Type: AWS::Lambda::Function
