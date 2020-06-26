@@ -18,6 +18,7 @@ class Sqs:
         self.queue_url=queue_url
         self.sqs = boto3.client("sqs")
         self.sqs_resource = boto3.resource("sqs")
+        print(f"Trying to get resource for queue with name: {queue_name}")
         self.queue = self.sqs_resource.get_queue_by_name(QueueName=queue_name)
 
     def delete_message(self, m):
