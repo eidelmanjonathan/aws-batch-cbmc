@@ -81,9 +81,7 @@ Resources:
                 Effect: Allow
                 Resource: "*"
               - Action:
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:GetQueueAttributes
+                  - sqs:*
                 Effect: Allow
                 Resource: "*"
 Outputs:
