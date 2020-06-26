@@ -65,6 +65,7 @@ def lambda_handler(event, request):
             cloudfront_url = github_msg["cloudfront_url"] if "cloudfront_url" in github_msg else None
             g.update_status(status=github_msg["status"], proof_name=github_msg["context"], commit_sha=github_msg["commit"],
                             cloudfront_url=cloudfront_url, description=github_msg["description"])
+            sqs.delete_message(m)
 
 
 
