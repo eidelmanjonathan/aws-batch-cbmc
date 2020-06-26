@@ -11,7 +11,7 @@ THROTTLE_THRESHOLD = 300
 TIMEOUT_LIMIT = 500
 
 queue_url = os.getenv("QUEUE_URL")
-queue_name = os.getenv("QUEUE_NAME")
+queue_name = os.getenv("GITHUB_QUEUE_NAME")
 
 class Sqs:
     def __init__(self, queue_url=None, queue_name=None):
