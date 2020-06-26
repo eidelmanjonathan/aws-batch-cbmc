@@ -11,7 +11,13 @@ Resources:
     Properties:
       QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallQueue"
       VisibilityTimeout: 900
+      RedrivePolicy:
+        DeadLetterTargetArn: !GetAtt GitHubDeadLetterQueue.Arn
 
+  GitHubDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallQueue"
 
   ProcessGithubCallsLambda:
     Type: AWS::Lambda::Function
