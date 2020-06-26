@@ -13,7 +13,7 @@ Resources:
       VisibilityTimeout: 900
       RedrivePolicy:
         DeadLetterTargetArn: !GetAtt GitHubDeadLetterQueue.Arn
-        MaxReceiveCount: 3
+        maxReceiveCount: 3
 
   GitHubDeadLetterQueue:
     Type: AWS::SQS::Queue
