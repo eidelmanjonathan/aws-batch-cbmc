@@ -30,7 +30,7 @@ Resources:
           QUEUE_URL: !Ref GitHubCallQueue
           GITHUB_QUEUE_NAME: !GetAtt GitHubCallQueue.QueueName
 
- BatchEventRule:
+  BatchEventRule:
     Type: AWS::Events::Rule
     Properties:
       Description: "Batch state change rule"
