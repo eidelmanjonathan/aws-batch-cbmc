@@ -17,7 +17,7 @@ CBMC_RETRY_KEYWORDS = ["CBMC_RETRY", "/cbmc run checks"]
 def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = False):
     now = datetime.now()
     print(f"Trying to reach google: {now}")
-    requests.get("www.google.com")
+    requests.get("http://www.google.com")
     end_time = datetime.now()
     delta = end_time - now
     print(f"Pinging google took {delta.total_seconds()}")
