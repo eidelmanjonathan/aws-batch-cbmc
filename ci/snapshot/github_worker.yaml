@@ -12,7 +12,8 @@ Resources:
       QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallQueue"
       VisibilityTimeout: 900
       RedrivePolicy:
-        DeadLetterTargetArn: !GetAtt GitHubDeadLetterQueue.Arn
+        deadLetterTargetArn: !GetAtt GitHubDeadLetterQueue.Arn
+        maxReceiveCount: 3
 
   GitHubDeadLetterQueue:
     Type: AWS::SQS::Queue
