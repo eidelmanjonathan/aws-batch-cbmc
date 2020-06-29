@@ -7,14 +7,25 @@ import tarfile
 import urllib
 import threading
 import time
+from datetime import datetime
 
 import boto3
 import github
+import requests
 
 from cbmc_ci_timer import Timer
 CBMC_RETRY_KEYWORDS = ["CBMC_RETRY", "/cbmc run checks"]
 
 def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = False):
+    now = datetime.now()
+    print(f"Trying to reach google: {now}")
+    requests.get("www.google.com")
+    end_time = datetime.now()
+    delta = end_time - now
+    print(f"Pinging google took {delta.total_seconds()}")
+    if delta.total_seconds() > 5:
+        print("LONG WAIT")
+
     kwds = {'state': status,
             'context': "CBMC Batch: " + ctx,
             'description': desc}
@@ -48,16 +59,6 @@ def get_github_personal_access_token():
     s = sm.get_secret_value(SecretId='GitHubCommitStatusPAT')
     return str(json.loads(s['SecretString'])[0]['GitHubPAT'])
 
-
-
-def print_heartbeat():
-    cnt = 0
-    while cnt <= 120:
-        cnt += 1
-        print("github update counter: %d" % cnt)
-        time.sleep(1)
-
-
 def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric, post_url = False):
     """Update GitHub Status
 
@@ -65,10 +66,6 @@ def update_status(status, ctx, jobname, desc, repo_id, sha, no_status_metric, po
     https://developer.github.com/v3/repos/statuses/#create-a-status
     http://pygithub.readthedocs.io/en/latest/github_objects/Commit.html
     """
-    heartbeat = threading.Thread(
-        target=print_heartbeat)
-    heartbeat.start()
-
     #pylint: disable=too-many-arguments
 
     region = os.environ['AWS_REGION']
