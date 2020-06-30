@@ -65,4 +65,5 @@ def lambda_handler(event, request):
             g.update_status(status=github_msg["status"], proof_name=github_msg["context"], commit_sha=github_msg["commit"],
                             cloudfront_url=cloudfront_url, description=github_msg["description"])
             sqs.delete_message(m)
+            remaining_calls = remaining_calls - 1
 
