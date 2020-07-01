@@ -39,6 +39,10 @@ def lambda_handler(event, request):
     # Run for 10 minutes
     t_end = time.time() + 60 * TIME_LIMIT_MINUTES
     while time.time() < t_end:
+        # DEBUG
+        messages = sqs.receive_message()
+        print(f"Messages received: {messages}")
+        # END DEBUG
         for m in sqs.receive_message():
             github_msg = json.loads(m.body)
             print(json.dumps(github_msg, indent=2))
