@@ -1,6 +1,8 @@
 import json
 import os
+import time
 from datetime import datetime
+from math import floor
 
 import github
 
@@ -12,6 +14,9 @@ class GithubUpdater:
         self.session_uuid = session_uuid
         self.g = github.Github(oath_token)
         self.repo = self.g.get_repo(repo_id)
+        self.remaining_calls = self.get_rate_limit()
+        self.time_to_reset = self.get_reset_time()
+        self.seconds_to_reset = floor(self.time_to_reset.total_seconds())
 
     def update_status(self, status=GIT_SUCCESS, proof_name=None, commit_sha=None, cloudfront_url=None, description=None):
         kwds = {'state': status,
@@ -20,14 +25,23 @@ class GithubUpdater:
         if cloudfront_url is not None:
             kwds["target_url"] = cloudfront_url
         print(f"Updating github status with the following parameters:\n{json.dumps(kwds, indent=2)}")
+        start = time.time()
         self.repo.get_commit(sha=commit_sha).create_status(**kwds)
+        end = time.time()
+        print(f"Status update took {end - start} seconds")
+        self.remaining_calls -= 1
+        print(f"Remaining API calls: {self.remaining_calls}")
         return
 
     def get_rate_limit(self):
         rl = self.g.get_rate_limit()
         core = rl.core
+        self.remaining_calls = core.remaining
+        print(f"Rate limit remaining: {self.remaining_calls}")
         return core.remaining
     def get_reset_time(self):
         rtime = self.g.rate_limiting_resettime
         dt_object = datetime.fromtimestamp(rtime)
-        return dt_object
+        self.time_to_reset = dt_object - datetime.now()
+        print(f"Seconds to reset: {self.seconds_to_reset}")
+        return dt_object - datetime.now()
