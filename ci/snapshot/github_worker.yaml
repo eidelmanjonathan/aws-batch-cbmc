@@ -34,7 +34,7 @@ Resources:
       Handler: github_worker_lambda.lambda_handler
       Role: !GetAtt BatchLambdaRole.Arn
       Runtime: python3.7
-      Timeout: 60
+      Timeout: 360
       ReservedConcurrentExecutions: 1
       MemorySize: 512
       Environment:
