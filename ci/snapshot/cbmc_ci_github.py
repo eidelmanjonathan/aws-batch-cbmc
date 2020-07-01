@@ -32,7 +32,7 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = Fa
         }
         sqs = boto3.client("sqs")
         print(f"Sending a message to the Github worker queue: {json.dumps(update_github_msg, indent=2)}")
-        sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(update_github_msg))
+        sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(update_github_msg), MessageGroupId=sha)
         return
 
     print("Not updating GitHub status")
