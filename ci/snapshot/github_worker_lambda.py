@@ -48,7 +48,6 @@ def lambda_handler(event, request):
             if g is None:
                 g = GithubUpdater(repo_id=int(github_msg["repo_id"]),
                                   oath_token=github_msg["oath"])
-
             if g.remaining_calls == 0:
                 raise Exception(f"Hit the Github API ratelimit. Failed to deliver message:{json.dumps(github_msg, indent=2)}")
             elif g.remaining_calls <= g.seconds_to_reset:

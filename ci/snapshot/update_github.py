@@ -16,6 +16,9 @@ class GithubUpdater:
         self.remaining_calls = self.get_rate_limit()
         self.time_to_reset = self.get_reset_time()
         self.seconds_to_reset = floor(self.time_to_reset.total_seconds())
+        print(f"remaining_calls: {self.remaining_calls}")
+        print(f"time_to_reset {self.time_to_reset}")
+        print(f"total seconds: {self.seconds_to_reset}")
 
     def update_status(self, status=GIT_SUCCESS, proof_name=None, commit_sha=None, cloudfront_url=None, description=None):
         kwds = {'state': status,
