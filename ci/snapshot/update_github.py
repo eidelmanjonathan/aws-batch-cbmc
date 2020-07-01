@@ -14,8 +14,7 @@ class GithubUpdater:
         self.g = github.Github(oath_token)
         self.repo = self.g.get_repo(repo_id)
         self.remaining_calls = self.get_rate_limit()
-        self.time_to_reset = self.get_reset_time()
-        self.seconds_to_reset = floor(self.time_to_reset.total_seconds())
+        self.seconds_to_reset = self.get_reset_time()
         print(f"remaining_calls: {self.remaining_calls}")
         print(f"time_to_reset {self.time_to_reset}")
         print(f"total seconds: {self.seconds_to_reset}")
@@ -45,5 +44,6 @@ class GithubUpdater:
         rtime = self.g.rate_limiting_resettime
         dt_object = datetime.fromtimestamp(rtime)
         self.time_to_reset = dt_object - datetime.now()
+        self.seconds_to_reset = floor(self.time_to_reset.total_seconds())
         print(f"Seconds to reset: {self.seconds_to_reset}")
-        return dt_object - datetime.now()
+        return self.seconds_to_reset
