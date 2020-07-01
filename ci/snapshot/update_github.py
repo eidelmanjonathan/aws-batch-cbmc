@@ -13,8 +13,11 @@ class GithubUpdater:
         self.session_uuid = session_uuid
         self.g = github.Github(oath_token)
         self.repo = self.g.get_repo(repo_id)
-        self.remaining_calls = self.get_rate_limit()
-        self.seconds_to_reset = self.get_reset_time()
+        self.seconds_to_reset = None
+        self.remaining_calls = None
+        self.time_to_reset = None
+        self.get_rate_limit()
+        self.get_reset_time()
         print(f"remaining_calls: {self.remaining_calls}")
         print(f"time_to_reset {self.time_to_reset}")
         print(f"total seconds: {self.seconds_to_reset}")
