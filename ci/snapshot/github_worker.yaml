@@ -19,7 +19,8 @@ Resources:
   GitHubDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallDeadLetterQueue"
+      FifoQueue: True
+      QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallDeadLetterQueue.fifo"
 
   ProcessGithubCallsLambda:
     Type: AWS::Lambda::Function
