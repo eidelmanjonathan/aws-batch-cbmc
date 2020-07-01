@@ -14,6 +14,7 @@ CBMC_RETRY_KEYWORDS = ["CBMC_RETRY", "/cbmc run checks"]
 
 def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = False):
     target_url = None
+
     if jobname and post_url:
         cloudfront_url = os.environ['CLOUDFRONT_URL']
         target_url = (f"https://{cloudfront_url}/{jobname}/out/html/index.html")
