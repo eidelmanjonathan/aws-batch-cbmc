@@ -6,7 +6,7 @@ Parameters:
     Type: String
 Resources:
 
-  GitHubCallQueue:
+  GitHubCallQueue.fifo:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::AccountId}-${AWS::Region}-GitHubCallQueue"
