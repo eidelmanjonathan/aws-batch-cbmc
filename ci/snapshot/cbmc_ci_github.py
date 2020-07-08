@@ -21,11 +21,13 @@ def update_github_status(repo_id, sha, status, ctx, desc, jobname, post_url = Fa
 
     updating = os.environ.get('CBMC_CI_UPDATING_STATUS')
     queue_url = os.environ.get("GITHUB_QUEUE_URL")
+    pr = sha.replace("origin/pr/", "") if "origin/pr/" in sha else None
     if updating and updating.strip().lower() == 'true':
         update_github_msg = {
             "repo_id": repo_id,
             "oath": get_github_personal_access_token(),
             "commit": sha,
+            "pr": pr,
             "status": status,
             "context": "CBMC Batch: " + ctx,
             "description": desc,

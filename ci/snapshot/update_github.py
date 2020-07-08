@@ -22,14 +22,21 @@ class GithubUpdater:
         print(f"time_to_reset {self.time_to_reset}")
         print(f"total seconds: {self.seconds_to_reset}")
 
-    def update_status(self, status=GIT_SUCCESS, proof_name=None, commit_sha=None, cloudfront_url=None, description=None):
+    def update_status(self, status=GIT_SUCCESS, proof_name=None, commit_sha=None, cloudfront_url=None,
+                      description=None, pull_request=None):
+
         kwds = {'state': status,
                 'context': proof_name,
                 'description': description}
         if cloudfront_url is not None:
             kwds["target_url"] = cloudfront_url
         print(f"Updating github status with the following parameters:\n{json.dumps(kwds, indent=2)}")
+        if commit_sha is None and pull_request is None:
+            raise Exception(f"Invalid github update request for proof {proof_name}."
+                            f" Must provide either commit sha or pull request info")
         start = time.time()
+        if pull_request is not None:
+            commit_sha = self.repo.get_pull(int(pull_request)).head.sha
         self.repo.get_commit(sha=commit_sha).create_status(**kwds)
         end = time.time()
         print(f"Status update took {end - start} seconds")
