@@ -86,7 +86,8 @@ PROOF_ACCOUNT_BATCH_CLOUDFORMATION_DATA = {
     "cbmc-batch": {
         TEMPLATE_NAME_KEY: "cbmc.yaml",
         PARAMETER_KEYS_KEY: ['BuildToolsAccountId',
-                             'ImageTagSuffix']
+                             'ImageTagSuffix',
+                             "MaxVcpus"]
     },
     "alarms-prod": {
         TEMPLATE_NAME_KEY: "alarms-prod.yaml",
