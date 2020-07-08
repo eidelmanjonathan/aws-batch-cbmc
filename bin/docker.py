@@ -180,6 +180,8 @@ def launch_build(opts):
     install_cbmc(opts)
     get_buckets(opts)
     print("Launching Build")
+    cmd = ["goto-cc", "--version"]
+    run_command(cmd, "goto-cc-version.txt", "goto-cc-version-err.txt", "goto-cc-version-ps/txt", opts)
     cmd = ['make', 'goto']
     run_command(cmd, 'build.txt', 'build-err.txt', 'build-ps.txt', opts)
     print("Finished Build")
