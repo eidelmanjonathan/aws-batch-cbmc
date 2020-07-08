@@ -15,6 +15,9 @@ Parameters:
     Type: String
     Description: "Build tools account ID"
 
+  MaxVcpus:
+    Type: String
+    Description: "Max vCPUs"
 Resources:
 
   VPC:
@@ -180,7 +183,7 @@ Resources:
       Priority: 1
       ComputeEnvironmentOrder:
       - Order: 1
-        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate4
+        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate5
 
   # Rename compute environment and launch template by incrementing the last number if you change either one.
   ComputeEnvironmentLaunchTemplate3:
@@ -196,16 +199,16 @@ Resources:
                 VolumeType: io1
       LaunchTemplateName: ComputeEnvironmentLaunchTemplate3
 
-  CBMCComputeEnvironmentWithTemplate4:
+  CBMCComputeEnvironmentWithTemplate5:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate4
+      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate5
       Type: MANAGED
       ComputeResources:
         Type: EC2
         MinvCpus: 0
         DesiredvCpus: 8
-        MaxvCpus: 160
+        MaxvCpus: !Ref MaxVcpus
         InstanceTypes:
         - r4.2xlarge
         Subnets:
@@ -222,7 +225,7 @@ Resources:
 
 Outputs:
   ComputeEnvironmentArn:
-    Value: !Ref CBMCComputeEnvironmentWithTemplate4
+    Value: !Ref CBMCComputeEnvironmentWithTemplate5
   JobQueueArn:
     Value: !Ref JobQueue
   Ubuntu14GccJobDefinitionArn:
