@@ -54,6 +54,14 @@ RUN apt-get -y --purge remove \
     python3-setuptools \
     && apt-get -y autoremove && apt-get clean
 
+RUN apt-get -y install locales
+
+RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+
 ADD bin /cbmc-batch-boot
 
 ENV PATH "$PATH:/cbmc"
