@@ -147,7 +147,10 @@ def lambda_handler(event, context):
     job_id = event["detail"]["jobId"]
     status = event["detail"]["status"]
     job_name_info = Job_name_info(job_name)
-    if (status in ["SUCCEEDED", "FAILED"] and
+    if status in ["FAILED"]:
+        print(f"ERROR: The following job has failed: {job_name} with status {status}")
+        raise Exception(f"The following job has failed: {job_name} with status {status}")
+    if (status in ["SUCCEEDED"] and
             job_name_info.is_cbmc_batch_job):
         s3_dir = job_name_info.get_s3_dir()
         job_dir = job_name_info.get_job_dir()
