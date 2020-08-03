@@ -95,10 +95,11 @@ if __name__ == '__main__':
         raise Exception("Should not provide a snapshot ID if you are trying to generate a new snapshot")
     snapshot_to_deploy = None
     if args.generate_snapshot:
-        package_overrides = None
+        package_overrides = {}
         if args.package_overrides:
             package_overrides = get_package_overrides(args.package_overrides)
         add_proof_account_to_bucket_policy_only_once(account_orchestrator)
+        package_overrides["ImageTagSuffix"] = account_orchestrator.proof_account.parameter_manager.get_value("ImageTagSuffix")
         snapshot_to_deploy = account_orchestrator\
             .generate_new_proof_account_snapshot(overrides=package_overrides)
 
