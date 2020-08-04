@@ -255,36 +255,13 @@ Resources:
 ################################################################
 # Lambda permissions
 
-  SnsLambdaSESLambdaInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      Principal: sns.amazonaws.com
-      SourceArn: !Ref SnsLambdaTopic
-      FunctionName: !GetAtt SESLambda.Arn
-
-  SnsVerificationSESLambdaInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      Principal: sns.amazonaws.com
-      SourceArn: !Ref SnsVerificationTopic
-      FunctionName: !GetAtt SESLambda.Arn
-
-  SnsCodeBuildSESLambdaInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      Principal: sns.amazonaws.com
-      SourceArn: !Ref SnsCodeBuildTopic
-      FunctionName: !GetAtt SESLambda.Arn
 
   SnsCanarySESLambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
       Principal: sns.amazonaws.com
-      SourceArn: !Ref SnsCanaryTopic
+      SourceArn: !Ref DlqAlarmTopic
       FunctionName: !GetAtt SESLambda.Arn
 
 Outputs:
