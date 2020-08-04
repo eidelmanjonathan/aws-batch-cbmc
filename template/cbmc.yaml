@@ -8,7 +8,6 @@ Description: AWS CloudFormation Template for CBMC
 Parameters:
   ImageTagSuffix:
     Type: String
-    Default: ""
     Description: "A suffix for the container image tag indicating an image version"
 
   BuildToolsAccountId:
