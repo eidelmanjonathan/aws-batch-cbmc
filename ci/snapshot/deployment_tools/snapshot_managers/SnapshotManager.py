@@ -31,6 +31,8 @@ CBMC_VIEWER_CONST = "cbmc-viewer"
 CBMC_VIEWER_TAR = "cbmc-viewer.tar.gz"
 SNAPSHOT_TMP_FILENAME = "snapshot_tmp.json"
 
+IMAGE_TAG_SUFFIX = "ImageTagSuffix"
+
 class SnapshotManager:
     """
     This is the class that manages any kind of snapshot of an account and handles saving those snapshots
@@ -181,8 +183,8 @@ class SnapshotManager:
                 self._extract_package(downloaded_pkg)
             self._rename_package_tar(package, downloaded_pkg)
 
-        if overrides and "ImageTagSuffix" in overrides:
-            package_filenames["ImageTagSuffix"] = overrides["ImageTagSuffix"]
+        if overrides and IMAGE_TAG_SUFFIX in overrides:
+            package_filenames[IMAGE_TAG_SUFFIX] = overrides[IMAGE_TAG_SUFFIX]
 
         self._generate_snapshot_file(package_filenames)
         self._upload_template_package()
