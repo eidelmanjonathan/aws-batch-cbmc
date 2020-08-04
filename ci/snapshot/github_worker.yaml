@@ -4,6 +4,12 @@ Parameters:
     Type: String
   S3BucketToolsName:
     Type: String
+
+  NotificationAddress:
+    Type: String
+  SIMAddress:
+    Type: String
+
 Resources:
 
   GitHubCallQueue:
@@ -96,6 +102,188 @@ Resources:
                   - sqs:*
                 Effect: Allow
                 Resource: "*"
+
+
+######## Alarms ##############
+  DlqAlarm:
+    DependsOn: SESLambda
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref DlqAlarmTopic
+      ComparisonOperator: LessThanThreshold
+      EvaluationPeriods: 1
+      MetricName: Attempts
+      Namespace: !Ref ProjectName
+      Period: 86400
+      Statistic: Minimum
+      Threshold: 1.0
+      TreatMissingData: breaching
+
+  DlqAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub "DlqAlarmTopic Failure"
+      TopicName: !Sub "DlqAlarmTopic-failure"
+
+  DlqEventTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: "*"
+            Action: sns:Publish
+            Resource: !Ref DlqAlarmTopic
+            Condition:
+              ArnEquals:
+                "aws:SourceArn": !GetAtt DlqAlarm.Arn
+      Topics:
+        - !Ref DlqAlarmTopic
+
+  SnsDlqSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt SESLambda.Arn
+      Protocol: lambda
+      TopicArn: !Ref SnsCanaryTopic
+
+################################################################
+# SES: Simple Email Service
+################################################################
+
+# TODO: The SESLambdaRole and SESLambda are identical in
+# alarms-build and alarms-prod and could be included from
+# a shared template stored on S3.
+
+################################################################
+# SES lambda
+
+  SESLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "ses-lambda-policy-${AWS::Region}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+              - Action:
+                  - ses:SendEmail
+                Effect: Allow
+                Resource: "*"
+
+  SESLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt SESLambdaRole.Arn
+      Runtime: python2.7
+      Timeout: 60
+      MemorySize: 128
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import json
+          import os
+          import traceback
+
+          SENDER = '${NotificationAddress}'
+          TO = '${SIMAddress}'
+
+          def lambda_handler(event, context):
+            ses = boto3.client('ses', region_name=os.environ['AWS_REGION'])
+            try:
+              subject = event['Records'][0]['Sns']['Subject']
+              if not subject:
+                subject = 'Pipeline error in ${AWS::AccountId}'
+              message = json.loads(event['Records'][0]['Sns']['Message'])
+              body = json.dumps(message, sort_keys=True, indent=2)
+              ses.send_email(
+                Source=SENDER,
+                Destination={'ToAddresses': [TO]},
+                Message={
+                  'Subject': {'Data': '${ProjectName} ' + subject},
+                  'Body': {
+                    'Text': {'Data': body},
+                    'Html': {
+                      'Data': '<html><head></head><body>{}</body></html>'.format(
+                        body.replace('\n', '<br>'))
+                    }
+                  }
+                })
+
+            except Exception as e:
+              traceback.print_exc()
+              print 'Error: ' + str(e)
+              print 'Event: ' + str(event)
+              ses.send_email(
+                Source=SENDER,
+                Destination={'ToAddresses': [TO]},
+                Message={
+                  'Subject': {'Data': 'SES Lambda ${AWS::AccountId} failed'},
+                  'Body': {
+                    'Text': {'Data': str(e)},
+
+
+                    'Html': {
+                      'Data': '<html><head></head><body>{}</body></html>'.format(e)
+                    }
+                  }
+                })
+
+################################################################
+# Lambda
+################################################################
+
+################################################################
+# Lambda permissions
+
+  SnsLambdaSESLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SnsLambdaTopic
+      FunctionName: !GetAtt SESLambda.Arn
+
+  SnsVerificationSESLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SnsVerificationTopic
+      FunctionName: !GetAtt SESLambda.Arn
+
+  SnsCodeBuildSESLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SnsCodeBuildTopic
+      FunctionName: !GetAtt SESLambda.Arn
+
+  SnsCanarySESLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SnsCanaryTopic
+      FunctionName: !GetAtt SESLambda.Arn
+
 Outputs:
   GithubQueueUrl:
     Value: !Ref  GitHubCallQueue
