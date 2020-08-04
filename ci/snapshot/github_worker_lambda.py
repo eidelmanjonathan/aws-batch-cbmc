@@ -1,9 +1,10 @@
 import os
 import json
 import time
-from math import floor, ceil
-from datetime import datetime
-from time import sleep
+import traceback
+
+
+from github import GithubException
 from update_github import GithubUpdater
 
 import boto3
@@ -58,8 +59,12 @@ def lambda_handler(event, request):
             cloudfront_url = github_msg["cloudfront_url"] if "cloudfront_url" in github_msg else None
             commit_sha = github_msg["commit"] if "commit" in github_msg else None
             pull_request = github_msg["pr"] if "pr" in github_msg else None
-            g.update_status(status=github_msg["status"], proof_name=github_msg["context"], commit_sha=commit_sha,
-                            pull_request=pull_request, cloudfront_url=cloudfront_url, description=github_msg["description"])
+            try:
+                g.update_status(status=github_msg["status"], proof_name=github_msg["context"], commit_sha=commit_sha,
+                                pull_request=pull_request, cloudfront_url=cloudfront_url, description=github_msg["description"])
+            except GithubException as e:
+                print(f"ERROR: Failed to send message: {json.dumps(github_msg, indent=2)}")
+                traceback.print_exc()
             sqs.delete_message(m)
 
 
