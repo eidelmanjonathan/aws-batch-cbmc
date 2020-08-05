@@ -197,7 +197,7 @@ Resources:
     Properties:
       Handler: index.lambda_handler
       Role: !GetAtt SESLambdaRole.Arn
-      Runtime: python2.7
+      Runtime: python3.8
       Timeout: 60
       MemorySize: 128
       Code:
@@ -224,11 +224,7 @@ Resources:
                 Message={
                   'Subject': {'Data': '${ProjectName} ' + subject},
                   'Body': {
-                    'Text': {'Data': body},
-                    'Html': {
-                      'Data': '<html><head></head><body>{}</body></html>'.format(
-                        body.replace('\n', '<br>'))
-                    }
+                    'Text': {'Data': body}
                   }
                 })
 
@@ -242,12 +238,7 @@ Resources:
                 Message={
                   'Subject': {'Data': 'SES Lambda ${AWS::AccountId} failed'},
                   'Body': {
-                    'Text': {'Data': str(e)},
-
-
-                    'Html': {
-                      'Data': '<html><head></head><body>{}</body></html>'.format(e)
-                    }
+                    'Text': {'Data': str(e)}
                   }
                 })
 
