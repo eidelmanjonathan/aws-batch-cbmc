@@ -116,7 +116,7 @@ Resources:
         - !Ref DlqAlarmTopic
       ComparisonOperator: LessThanThreshold
       EvaluationPeriods: 1
-      MetricName: ApproximateNumberOfMessagesVisible
+      MetricName: NumberOfMessagesSent
       Namespace: "AWS/SQS"
       Period: 60
       Statistic: Maximum
