@@ -124,7 +124,7 @@ Resources:
       TreatMissingData: notBreaching
       Dimensions:
         - Name: QueueName
-          Value: !GetAtt GitHubDeadLetterQueue.Arn
+          Value: !GetAtt GitHubDeadLetterQueue.QueueName
 
   DlqAlarmTopic:
     Type: AWS::SNS::Topic
