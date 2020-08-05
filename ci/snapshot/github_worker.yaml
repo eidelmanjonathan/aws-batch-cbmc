@@ -116,12 +116,15 @@ Resources:
         - !Ref DlqAlarmTopic
       ComparisonOperator: LessThanThreshold
       EvaluationPeriods: 1
-      MetricName: Attempts
-      Namespace: !Ref ProjectName
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: "AWS/SQS"
       Period: 86400
-      Statistic: Minimum
+      Statistic: Maximum
       Threshold: 1.0
       TreatMissingData: breaching
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt GitHubDeadLetterQueue.Arn
 
   DlqAlarmTopic:
     Type: AWS::SNS::Topic
