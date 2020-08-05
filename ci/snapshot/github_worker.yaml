@@ -150,7 +150,7 @@ Resources:
     Properties:
       Endpoint: !GetAtt SESLambda.Arn
       Protocol: lambda
-      TopicArn: !Ref SnsCanaryTopic
+      TopicArn: !Ref DlqAlarmTopic
 
 ################################################################
 # SES: Simple Email Service
