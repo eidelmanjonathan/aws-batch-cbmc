@@ -197,7 +197,7 @@ Resources:
     Properties:
       Handler: index.lambda_handler
       Role: !GetAtt SESLambdaRole.Arn
-      Runtime: python3.8
+      Runtime: python3.7
       Timeout: 60
       MemorySize: 128
       Code:
