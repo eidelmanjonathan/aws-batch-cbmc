@@ -211,36 +211,35 @@ Resources:
           TO = '${SIMAddress}'
 
           def lambda_handler(event, context):
-            ses = boto3.client('ses', region_name=os.environ['AWS_REGION'])
-            try:
-              subject = event['Records'][0]['Sns']['Subject']
-              if not subject:
-                subject = 'Pipeline error in ${AWS::AccountId}'
-              message = json.loads(event['Records'][0]['Sns']['Message'])
-              body = json.dumps(message, sort_keys=True, indent=2)
-              ses.send_email(
-                Source=SENDER,
-                Destination={'ToAddresses': [TO]},
-                Message={
-                  'Subject': {'Data': '${ProjectName} ' + subject},
-                  'Body': {
-                    'Text': {'Data': body}
-                  }
-                })
-
-            except Exception as e:
-              traceback.print_exc()
-              print 'Error: ' + str(e)
-              print 'Event: ' + str(event)
-              ses.send_email(
-                Source=SENDER,
-                Destination={'ToAddresses': [TO]},
-                Message={
-                  'Subject': {'Data': 'SES Lambda ${AWS::AccountId} failed'},
-                  'Body': {
-                    'Text': {'Data': str(e)}
-                  }
-                })
+              ses = boto3.client('ses', region_name=os.environ['AWS_REGION'])
+              try:
+                  subject = event['Records'][0]['Sns']['Subject']
+                  if not subject:
+                      subject = 'Pipeline error in ${AWS::AccountId}'
+                  message = json.loads(event['Records'][0]['Sns']['Message'])
+                  body = json.dumps(message, sort_keys=True, indent=2)
+                  ses.send_email(
+                      Source=SENDER,
+                      Destination={'ToAddresses': [TO]},
+                      Message={
+                          'Subject': {'Data': '${ProjectName} ' + subject},
+                          'Body': {
+                              'Text': {'Data': body}
+                          }
+                      })
+              except Exception as e:
+                  traceback.print_exc()
+                  print(f'Error: {str(e)}')
+                  print(f'Event: {str(event)}')
+                  ses.send_email(
+                      Source=SENDER,
+                      Destination={'ToAddresses': [TO]},
+                      Message={
+                          'Subject': {'Data': 'SES Lambda ${AWS::AccountId} failed'},
+                          'Body': {
+                              'Text': {'Data': str(e)}
+                          }
+                      })
 
 ################################################################
 # Lambda
