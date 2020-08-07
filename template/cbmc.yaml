@@ -182,7 +182,7 @@ Resources:
       Priority: 1
       ComputeEnvironmentOrder:
       - Order: 1
-        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate6
+        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate7
 
   # Rename compute environment and launch template by incrementing the last number if you change either one.
   ComputeEnvironmentLaunchTemplate3:
@@ -193,15 +193,15 @@ Resources:
           -   DeviceName: /dev/xvdcz
               Ebs:
                 DeleteOnTermination: True
-                Iops: 15000
+                Iops: 64000
                 VolumeSize: 1200
                 VolumeType: io1
       LaunchTemplateName: ComputeEnvironmentLaunchTemplate3
 
-  CBMCComputeEnvironmentWithTemplate6:
+  CBMCComputeEnvironmentWithTemplate7:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate6
+      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate7
       Type: MANAGED
       ComputeResources:
         Type: EC2
@@ -224,7 +224,7 @@ Resources:
 
 Outputs:
   ComputeEnvironmentArn:
-    Value: !Ref CBMCComputeEnvironmentWithTemplate6
+    Value: !Ref CBMCComputeEnvironmentWithTemplate7
   JobQueueArn:
     Value: !Ref JobQueue
   Ubuntu14GccJobDefinitionArn:
