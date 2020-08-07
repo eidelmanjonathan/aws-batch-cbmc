@@ -4,7 +4,7 @@ import time
 import traceback
 
 
-from github import GithubException
+from github import GithubException, UnknownObjectException
 from update_github import GithubUpdater
 
 import boto3
@@ -62,7 +62,12 @@ def lambda_handler(event, request):
             try:
                 g.update_status(status=github_msg["status"], proof_name=github_msg["context"], commit_sha=commit_sha,
                                 pull_request=pull_request, cloudfront_url=cloudfront_url, description=github_msg["description"])
-            except GithubException as e:
+            except UnknownObjectException:
+                print(f"Github returned 404 for message {json.dumps(github_msg, indent=2)}")
+                print("Deleting message from queue")
+                sqs.delete_message(m)
+                traceback.print_exc()
+            except GithubException:
                 print(f"ERROR: Failed to send message: {json.dumps(github_msg, indent=2)}")
                 traceback.print_exc()
             sqs.delete_message(m)
