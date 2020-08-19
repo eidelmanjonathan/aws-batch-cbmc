@@ -182,13 +182,14 @@ Resources:
       Priority: 1
       ComputeEnvironmentOrder:
       - Order: 1
-        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate6
+        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate7
 
   # Rename compute environment and launch template by incrementing the last number if you change either one.
   ComputeEnvironmentLaunchTemplate3:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData:
+        UserData: Q29udGVudC1UeXBlOiBtdWx0aXBhcnQvbWl4ZWQ7IGJvdW5kYXJ5PSI9PUJPVU5EQVJZPT0iCk1JTUUtVmVyc2lvbjogMS4wCgotLT09Qk9VTkRBUlk9PQpDb250ZW50LVR5cGU6IHRleHQvY2xvdWQtYm9vdGhvb2s7IGNoYXJzZXQ9InVzLWFzY2lpIgojY2xvdWQtYm9vdGhvb2sKIyEvYmluL2Jhc2gKY2xvdWQtaW5pdC1wZXIgb25jZSBkb2NrZXJfb3B0aW9ucyBlY2hvICdPUFRJT05TPSIke09QVElPTlN9IC0tc3RvcmFnZS1vcHQgZG0uYmFzZXNpemU9MjBHIicgPj4gL2V0Yy9zeXNjb25maWcvZG9ja2VyCgotLT09Qk9VTkRBUlk9PQpDb250ZW50LVR5cGU6IHRleHQveC1zaGVsbHNjcmlwdDsgY2hhcnNldD0idXMtYXNjaWkiCgojIS9iaW4vYmFzaAojIFNldCBhbnkgRUNTIGFnZW50IGNvbmZpZ3VyYXRpb24gb3B0aW9ucwplY2hvIEVDU19DTFVTVEVSPWRlZmF1bHQ+Pi9ldGMvZWNzL2Vjcy5jb25maWcKZWNobyBFQ1NfSU1BR0VfQ0xFQU5VUF9JTlRFUlZBTD02MG0gPj4gL2V0Yy9lY3MvZWNzLmNvbmZpZwplY2hvIEVDU19JTUFHRV9NSU5JTVVNX0NMRUFOVVBfQUdFPTYwbSA+PiAvZXRjL2Vjcy9lY3MuY29uZmlnCi0tPT1CT1VOREFSWT09LS0K
         BlockDeviceMappings:
           -   DeviceName: /dev/xvdcz
               Ebs:
@@ -198,10 +199,10 @@ Resources:
                 VolumeType: io1
       LaunchTemplateName: ComputeEnvironmentLaunchTemplate3
 
-  CBMCComputeEnvironmentWithTemplate6:
+  CBMCComputeEnvironmentWithTemplate7:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate6
+      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate7
       Type: MANAGED
       ComputeResources:
         Type: EC2
@@ -224,7 +225,7 @@ Resources:
 
 Outputs:
   ComputeEnvironmentArn:
-    Value: !Ref CBMCComputeEnvironmentWithTemplate6
+    Value: !Ref CBMCComputeEnvironmentWithTemplate7
   JobQueueArn:
     Value: !Ref JobQueue
   Ubuntu14GccJobDefinitionArn:
