@@ -17,6 +17,11 @@ Parameters:
   MaxVcpus:
     Type: String
     Description: "Max vCPUs"
+
+  LaunchTemplateUserData:
+    Type: String
+    Description: LaunchTemplateUserData
+    Default: ""
 Resources:
 
   VPC:
@@ -182,14 +187,14 @@ Resources:
       Priority: 1
       ComputeEnvironmentOrder:
       - Order: 1
-        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate7
+        ComputeEnvironment: !Ref CBMCComputeEnvironmentWithTemplate8
 
   # Rename compute environment and launch template by incrementing the last number if you change either one.
   ComputeEnvironmentLaunchTemplate3:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData:
-        UserData: Q29udGVudC1UeXBlOiBtdWx0aXBhcnQvbWl4ZWQ7IGJvdW5kYXJ5PSI9PUJPVU5EQVJZPT0iCk1JTUUtVmVyc2lvbjogMS4wCgotLT09Qk9VTkRBUlk9PQpDb250ZW50LVR5cGU6IHRleHQvY2xvdWQtYm9vdGhvb2s7IGNoYXJzZXQ9InVzLWFzY2lpIgojY2xvdWQtYm9vdGhvb2sKIyEvYmluL2Jhc2gKY2xvdWQtaW5pdC1wZXIgb25jZSBkb2NrZXJfb3B0aW9ucyBlY2hvICdPUFRJT05TPSIke09QVElPTlN9IC0tc3RvcmFnZS1vcHQgZG0uYmFzZXNpemU9MTAwRyInID4+IC9ldGMvc3lzY29uZmlnL2RvY2tlcgoKLS09PUJPVU5EQVJZPT0KQ29udGVudC1UeXBlOiB0ZXh0L3gtc2hlbGxzY3JpcHQ7IGNoYXJzZXQ9InVzLWFzY2lpIgoKIyEvYmluL2Jhc2gKIyBTZXQgYW55IEVDUyBhZ2VudCBjb25maWd1cmF0aW9uIG9wdGlvbnMKZWNobyBFQ1NfQ0xVU1RFUj1kZWZhdWx0Pj4vZXRjL2Vjcy9lY3MuY29uZmlnCmVjaG8gRUNTX0lNQUdFX0NMRUFOVVBfSU5URVJWQUw9NjBtID4+IC9ldGMvZWNzL2Vjcy5jb25maWcKZWNobyBFQ1NfSU1BR0VfTUlOSU1VTV9DTEVBTlVQX0FHRT02MG0gPj4gL2V0Yy9lY3MvZWNzLmNvbmZpZwotLT09Qk9VTkRBUlk9PS0tCg==
+        UserData: !Ref LaunchTemplateUserData
         BlockDeviceMappings:
           -   DeviceName: /dev/xvdcz
               Ebs:
@@ -199,10 +204,10 @@ Resources:
                 VolumeType: io1
       LaunchTemplateName: ComputeEnvironmentLaunchTemplate3
 
-  CBMCComputeEnvironmentWithTemplate7:
+  CBMCComputeEnvironmentWithTemplate8:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate7
+      ComputeEnvironmentName: CBMCComputeEnvironmentWithTemplate8
       Type: MANAGED
       ComputeResources:
         Type: EC2
@@ -225,7 +230,7 @@ Resources:
 
 Outputs:
   ComputeEnvironmentArn:
-    Value: !Ref CBMCComputeEnvironmentWithTemplate7
+    Value: !Ref CBMCComputeEnvironmentWithTemplate8
   JobQueueArn:
     Value: !Ref JobQueue
   Ubuntu14GccJobDefinitionArn:
