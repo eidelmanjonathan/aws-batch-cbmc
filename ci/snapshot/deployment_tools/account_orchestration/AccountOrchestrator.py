@@ -9,7 +9,8 @@ from deployment_tools.account_orchestration.stacks_data import BUILD_TOOLS_ALARM
     GITHUB_WORKER_DATA
 from deployment_tools.snapshot_managers.SnapshotManager import PROOF_SNAPSHOT_PREFIX, SnapshotManager, TOOLS_SNAPSHOT_PREFIX
 from deployment_tools.aws_managers.key_constants import BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY, BUILD_TOOLS_SNAPSHOT_ID_KEY, \
-    CLOUDFRONT_URL_KEY, PIPELINES_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, S3_BUCKET_PROOFS_OVERRIDE_KEY, SNAPSHOT_ID_OVERRIDE_KEY, EC2_LAUNCH_TEMPLATE_USER_PARAMS_KEY
+    CLOUDFRONT_URL_KEY, PIPELINES_KEY, PROOF_ACCOUNT_ID_TO_ADD_KEY, S3_BUCKET_PROOFS_OVERRIDE_KEY, SNAPSHOT_ID_OVERRIDE_KEY, \
+    EC2_LAUNCH_TEMPLATE_USER_PARAMS_KEY
 
 BUILD_TOOLS_IMAGE_S3_SOURCE = "BUILD_TOOLS_IMAGE_S3_SOURCE"
 PROOF_ACCOUNT_IMAGE_S3_SOURCE = "PROOF_ACCOUNT_IMAGE_S3_SOURCE"
@@ -196,7 +197,10 @@ class AccountOrchestrator:
                                          s3_template_source=PROOF_ACCOUNT_IMAGE_S3_SOURCE,
                                          overrides={
                                              BUILD_TOOLS_ACCOUNT_ID_OVERRIDE_KEY: self.build_tools.account_id,
-                                             EC2_LAUNCH_TEMPLATE_USER_PARAMS_KEY: str(base64.b64encode(self.proof_account.parameter_manager.get_value(EC2_LAUNCH_TEMPLATE_USER_PARAMS_KEY).encode("utf-8")), "utf-8")
+                                             EC2_LAUNCH_TEMPLATE_USER_PARAMS_KEY:
+                                                 str(base64.b64encode(self.proof_account.parameter_manager
+                                                                      .get_value(EC2_LAUNCH_TEMPLATE_USER_PARAMS_KEY)
+                                                                      .encode("utf-8")), "utf-8")
                                          })
 
     def deploy_cloudfront_stacks(self):
