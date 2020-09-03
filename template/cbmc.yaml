@@ -177,6 +177,9 @@ Resources:
         Image: !Sub ${BuildToolsAccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cbmc:ubuntu16-gcc${ImageTagSuffix}
         Vcpus: 2
         Memory: 16000
+        Environment:
+          - Name: ExternalSatSolver
+            Value: kissat
       RetryStrategy:
         Attempts: 1
 
