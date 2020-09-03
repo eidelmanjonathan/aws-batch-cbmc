@@ -178,7 +178,7 @@ Resources:
         Vcpus: 2
         Memory: 16000
         Environment:
-          - Name: ExternalSatSolver
+          - Name: EXTERNAL_SAT_SOLVER
             Value: kissat
       RetryStrategy:
         Attempts: 1
