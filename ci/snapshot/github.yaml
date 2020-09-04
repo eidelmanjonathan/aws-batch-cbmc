@@ -430,6 +430,9 @@ Resources:
           - Name: GITHUB_QUEUE_URL
             Type: PLAINTEXT
             Value: !Ref GithubQueueUrl
+          - Name: EXTERNAL_SAT_SOLVER
+            Type: PLAINTEXT
+            Value: kissat
       Name: "Prepare-Source-Project"
       ServiceRole: !Ref PrepareSourceRole
       Source:
