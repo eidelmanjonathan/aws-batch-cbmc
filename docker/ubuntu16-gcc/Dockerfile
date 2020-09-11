@@ -8,6 +8,7 @@ FROM ubuntu:16.04
 # Installing default-jdk to get javacc to build cbmc (java component)
 # Installing emacs24-bin-common to get etags (try etags with ctags pkg)
 # Installing bc for Annapurna stage1 Makefile
+ADD bin /cbmc-batch-boot
 
 ENV DEBIAN_FRONTEND noninteractive
 ARG UBUNTU_ARCHIVE
@@ -49,6 +50,26 @@ RUN wget https://www.python.org/ftp/python/3.7.2/Python-3.7.2.tar.xz &&  tar -xf
 RUN cd Python-3.7.2 && ./configure && make -j 20 build_all && make install
 RUN pip3.7 install voluptuous jinja2
 RUN rm /usr/bin/python3 &&  ln  /usr/local/bin/python3.7  /usr/bin/python3
+
+
+# Install the latest version of pip; however, do not use pip install --upgrade pip here
+# Install awscli and boto3 with pip and not apt-get (want python 2.7 version)
+RUN pip install --upgrade awscli && \
+    pip install --upgrade boto3 && \
+    pip3 install --upgrade awscli && \
+    pip3 install --upgrade boto3 && \
+    pip3.7 install --upgrade awscli && \
+    pip3.7 install --upgrade boto3
+
+RUN apt-get -y --purge remove \
+    python-pip \
+    python-setuptools \
+    python-wheel \
+    python3-pip \
+    python3-setuptools \
+    python3-wheel \
+    && apt-get -y autoremove && apt-get clean
+
 # Set default encoding to UTF-8. Otherwise files are can be encoded incorrectly leading to CBMC Viewer failures
 RUN locale-gen en_US.UTF-8
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -57,7 +78,6 @@ ENV LC_ALL en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 
-ADD bin /cbmc-batch-boot
 
 ENV PATH "$PATH:/cbmc"
 ENV PATH "$PATH:/cbmc-viewer"
