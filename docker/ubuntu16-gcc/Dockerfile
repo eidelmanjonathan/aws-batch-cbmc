@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 FROM ubuntu:16.04
+ADD bin /cbmc-batch-boot
 
 # Installing software-properties-common to get test PPA
 # Installing gcc/g++ version 5 via a test PPA to build cbmc on Ubuntu 14
@@ -36,26 +37,16 @@ RUN apt-get -y update && \
     python3-setuptools \
     locales \
     locales-all \
-    wget
+    wget build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev ninja-build gnuplot
 
 # install libssl-dev for encryption SDK
 # install cmake, openssl, libssl-dev for MQTT
 RUN apt-get -y install --no-install-recommends cmake openssl libssl-dev
 
-# Install the latest version of pip; however, do not use pip install --upgrade pip here
-# Install awscli and boto3 with pip and not apt-get (want python 2.7 version)
-RUN pip install --upgrade awscli && \
-    pip install --upgrade boto3 && \
-    pip3 install --upgrade awscli && \
-    pip3 install --upgrade boto3
-
-RUN apt-get -y --purge remove \
-    python-pip \
-    python-setuptools \
-    python3-pip \
-    python3-setuptools \
-    && apt-get -y autoremove && apt-get clean
-
+RUN wget https://www.python.org/ftp/python/3.7.2/Python-3.7.2.tar.xz &&  tar -xf Python-3.7.2.tar.xz
+RUN cd Python-3.7.2 && ./configure && make -j 20 build_all && make install
+RUN pip3.7 install voluptuous jinja2
+RUN rm /usr/bin/python3 &&  ln  /usr/local/bin/python3.7  /usr/bin/python3
 # Set default encoding to UTF-8. Otherwise files are can be encoded incorrectly leading to CBMC Viewer failures
 RUN locale-gen en_US.UTF-8
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -64,7 +55,7 @@ ENV LC_ALL en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 
-ADD bin /cbmc-batch-boot
+
 
 ENV PATH "$PATH:/cbmc"
 ENV PATH "$PATH:/cbmc-viewer"
