@@ -21,7 +21,8 @@ RUN apt-get -y update && \
     apt-get -y install --no-install-recommends \
     bc \
     emacs24-bin-common \
-    gcc \
+    gcc g++-5 gcc-5 \
+    flex bison \
     git \
     libc6-dev-i386 \
     make \
@@ -30,10 +31,12 @@ RUN apt-get -y update && \
     python-future \
     python-pip \
     python-setuptools \
+    python-wheel \
     python3 \
     python3-future \
     python3-pip \
     python3-setuptools \
+    python3-wheel \
     locales \
     locales-all \
     wget build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev ninja-build gnuplot
